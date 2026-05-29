@@ -66,21 +66,23 @@ class LLMService:
         message_lower = message.lower()
         
         if "你好" in message or "hello" in message_lower or "hi" in message_lower:
-            return "你好！我是MemoryAI，很高兴为你服务。请问有什么我可以帮助你的吗？"
+            return "你好！我是MemoryAI，一个具备认知记忆架构的智能AI助手。\n\n我可以帮你：\n• 回答各种问题\n• 记住你的偏好和习惯\n• 提供个性化的建议\n\n请问有什么我可以帮助你的吗？"
         elif "喜欢" in message or "like" in message_lower:
-            return "好的，我已经记住了你的偏好！"
-        elif "什么" in message or "what" in message_lower:
-            return "这是一个很好的问题。让我为你解答。"
-        elif "怎么" in message or "how" in message_lower:
-            return "让我来帮你解决这个问题。"
-        elif "为什么" in message or "why" in message_lower:
-            return "这是一个很好的问题。原因如下："
+            return f"好的，我记住了！{message}\n\n我会把这个偏好保存到记忆中，下次会参考这个信息来更好地为你服务。"
+        elif "什么" in message:
+            return f"关于你问的「{message}」，这是一个很好的问题。\n\n不过目前我还没有配置AI模型，无法提供详细的回答。请点击左上角的「配置」按钮，选择一个AI厂商并填写API Key，我就能给你更智能的回答了。\n\n配置完成后，我可以：\n• 详细解答你的问题\n• 提供相关的背景知识\n• 给出实用的建议"
+        elif "怎么" in message or "如何" in message:
+            return f"关于「{message}」，我来帮你分析一下。\n\n目前我处于基础模式，回答能力有限。如需更详细的指导，请配置AI模型：\n1. 点击左上角「配置」按钮\n2. 选择AI厂商（如百炼、OpenAI等）\n3. 填写API Key\n4. 保存配置\n\n配置完成后，我就能给你更专业的解答了！"
+        elif "为什么" in message:
+            return f"你问的「{message}」很有深度！\n\n要回答这个问题，需要更强大的AI能力。目前我处于基础模式，建议你配置AI模型以获得更准确的分析和解答。\n\n配置方法：点击左上角「配置」按钮，选择厂商并填写API Key即可。"
         elif "谢谢" in message or "thank" in message_lower:
-            return "不客气！很高兴能帮到你。"
+            return "不客气！很高兴能帮到你。😊\n\n如果还有其他问题，随时可以问我。"
         elif "再见" in message or "bye" in message_lower:
-            return "再见！期待下次与你交流。"
+            return "再见！期待下次与你交流。👋\n\n我会记住我们的对话，下次见面时可以继续。"
+        elif "你是谁" in message or "介绍" in message:
+            return "我是MemoryAI，一个基于认知记忆架构的智能AI助手。\n\n🧠 **我的特点：**\n• **四层记忆系统**：工作记忆、短期记忆、长期记忆、情景记忆\n• **跨会话记忆**：记住你的偏好和历史\n• **智能决策**：自主判断何时需要确认\n• **可解释性**：告诉你我为什么这样回答\n\n目前处于基础模式，配置AI模型后可以发挥全部能力！"
         else:
-            return f"我收到了你的消息：「{message}」。请问还有什么我可以帮助你的吗？"
+            return f"收到你的消息：「{message}」\n\n目前我处于基础模式，回答能力有限。如需更智能的回答，请配置AI模型：\n\n👉 点击左上角「配置」按钮\n👉 选择AI厂商\n👉 填写API Key\n\n配置后我就能真正理解你的问题并给出有用的回答了！"
 
 
 llm_service = None
