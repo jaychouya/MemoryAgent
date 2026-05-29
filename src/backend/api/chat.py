@@ -6,6 +6,12 @@ import logging
 from src.backend.services import get_llm_service, LLMService
 from src.agent.loop import AgentLoop
 from src.agent.tools.registry import get_tool_registry
+from src.agent.plans import (
+    PlanModeManager,
+    EnterPlanModeTool,
+    ExitPlanModeTool,
+    CreatePlanTool
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -15,6 +21,7 @@ sessions: Dict[str, List[Dict[str, str]]] = {}
 global_model_config: Optional[Dict[str, str]] = None
 
 _agent_loop: Optional[AgentLoop] = None
+_plan_manager: Optional[PlanModeManager] = None
 
 
 class ModelConfigRequest(BaseModel):
@@ -50,9 +57,15 @@ class ChatResponse(BaseModel):
 
 
 def get_agent_loop(llm_service) -> AgentLoop:
-    global _agent_loop
+    global _agent_loop, _plan_manager
     if _agent_loop is None:
         registry = get_tool_registry()
+        
+        _plan_manager = PlanModeManager()
+        registry.register(EnterPlanModeTool(_plan_manager))
+        registry.register(ExitPlanModeTool(_plan_manager))
+        registry.register(CreatePlanTool(_plan_manager))
+        
         _agent_loop = AgentLoop(
             llm_service=llm_service,
             tool_registry=registry,
