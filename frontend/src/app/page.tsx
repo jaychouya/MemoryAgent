@@ -13,7 +13,7 @@ export default function Home() {
               </svg>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-900">MemoMind</h1>
+              <h1 className="text-xl font-bold text-slate-900">MemoryAI</h1>
               <p className="text-xs text-slate-500">智能AI助手</p>
             </div>
           </div>
@@ -122,8 +122,7 @@ export default function Home() {
       {/* 底部 */}
       <footer className="bg-white border-t border-slate-200 px-6 py-4 mt-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between text-sm text-slate-500">
-          <p>MemoMind · 基于认知记忆架构的个人AI助手</p>
-          <p>展示项目 · 面试作品</p>
+          <p>MemoryAI · 基于认知记忆架构的个人AI助手</p>
         </div>
       </footer>
     </main>
