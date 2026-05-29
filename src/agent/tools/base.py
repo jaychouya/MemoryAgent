@@ -81,8 +81,7 @@ class BaseTool(ABC):
         """Validate subclass has required attributes."""
         super().__init_subclass__(**kwargs)
         
-        # Skip validation for abstract subclasses
-        if hasattr(cls, '__abstractmethods__') and cls.__abstractmethods__:
+        if cls.__name__ in ['ReadOnlyTool', 'ReadWriteTool', 'DestructiveTool']:
             return
             
         if not cls.name:
