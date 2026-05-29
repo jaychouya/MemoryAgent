@@ -15,15 +15,15 @@ const PROVIDERS: ModelProvider[] = [
     id: "openai",
     name: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
-    defaultModel: "gpt-5.5",
-    models: ["gpt-5.5", "gpt-5.5-mini", "gpt-5.5-nano", "gpt-5", "gpt-5-mini", "o3", "o3-mini", "o3-pro", "o4-mini", "gpt-4.1", "gpt-4.1-mini"]
+    defaultModel: "gpt-4.1",
+    models: ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "o3", "o3-mini", "o3-pro", "o4-mini", "gpt-4o", "gpt-4o-mini"]
   },
   {
     id: "dashscope",
     name: "百炼 (阿里云)",
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    defaultModel: "qwen3.7-max",
-    models: ["qwen3.7-max", "qwen3.7-plus", "qwen3.7-turbo", "qwen3.7-lite", "qwen3-235b-a22b", "qwen3-32b", "qwen3-14b", "qwen3-8b", "qwq-32b", "qwen2.5-72b-instruct"]
+    defaultModel: "qwen-max",
+    models: ["qwen-max", "qwen-plus", "qwen-turbo", "qwen-long", "qwen-vl-max", "qwen-vl-plus", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-r1"]
   },
   {
     id: "siliconflow",
@@ -49,8 +49,8 @@ const PROVIDERS: ModelProvider[] = [
     id: "zhipu",
     name: "智谱 (GLM)",
     baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    defaultModel: "glm-5-plus",
-    models: ["glm-5-plus", "glm-5", "glm-5-air", "glm-5-flash", "glm-4-plus", "glm-4-air", "glm-4-flash", "glm-4v-plus", "codegeex-4-plus"]
+    defaultModel: "glm-5.1",
+    models: ["glm-5.1", "glm-5", "glm-5-air", "glm-5-flash", "glm-4-plus", "glm-4-air", "glm-4-flash", "glm-4v-plus", "codegeex-4-plus"]
   },
   {
     id: "moonshot",
@@ -63,29 +63,29 @@ const PROVIDERS: ModelProvider[] = [
     id: "deepseek",
     name: "DeepSeek",
     baseUrl: "https://api.deepseek.com/v1",
-    defaultModel: "deepseek-r1-0528",
-    models: ["deepseek-r1-0528", "deepseek-v3-0324", "deepseek-r1", "deepseek-v3", "deepseek-coder-v2"]
+    defaultModel: "deepseek-v4-pro",
+    models: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v3.2", "deepseek-v3.1", "deepseek-r1", "deepseek-v3"]
   },
   {
     id: "baidu",
-    name: "百度 (文心一言)",
-    baseUrl: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop",
-    defaultModel: "ernie-5.0",
-    models: ["ernie-5.0", "ernie-5.0-lite", "ernie-4.5-8k", "ernie-4.5-turbo-8k", "ernie-4.0-8k", "ernie-4.0-turbo-8k", "ernie-x1"]
+    name: "百度 (千帆)",
+    baseUrl: "https://qianfan.baidubce.com/v2",
+    defaultModel: "ernie-5.1",
+    models: ["ernie-5.1", "ernie-5.1-preview", "ernie-4.5-turbo-128k", "ernie-4.5-turbo-32k", "ernie-x1", "deepseek-v4-pro", "deepseek-r1"]
   },
   {
     id: "bytedance",
     name: "字节 (豆包)",
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-    defaultModel: "doubao-2.0-pro-256k",
-    models: ["doubao-2.0-pro-256k", "doubao-2.0-pro-32k", "doubao-2.0-lite-32k", "doubao-1.5-pro-256k", "doubao-1.5-pro-32k", "doubao-1.5-lite-32k"]
+    defaultModel: "doubao-seed-1-8-251228",
+    models: ["doubao-seed-1-8-251228", "doubao-seed-1-6-251015", "doubao-2.0-pro-256k", "doubao-2.0-pro-32k", "doubao-2.0-lite-32k", "doubao-1.5-pro-256k", "doubao-1.5-pro-32k"]
   },
   {
     id: "minimax",
     name: "MiniMax",
-    baseUrl: "https://api.minimax.chat/v1",
-    defaultModel: "MiniMax-M1",
-    models: ["MiniMax-M1", "MiniMax-M1-mini", "MiniMax-Text-01", "abab7-chat"]
+    baseUrl: "https://api.minimaxi.com/v1",
+    defaultModel: "MiniMax-M2.7",
+    models: ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2", "MiniMax-Text-01"]
   },
   {
     id: "spark",
@@ -98,22 +98,29 @@ const PROVIDERS: ModelProvider[] = [
     id: "yi",
     name: "零一万物 (Yi)",
     baseUrl: "https://api.lingyiwanwu.com/v1",
-    defaultModel: "yi-3.5-large",
-    models: ["yi-3.5-large", "yi-3.5-medium", "yi-3.5-light", "yi-large", "yi-large-turbo", "yi-lightning"]
+    defaultModel: "yi-lightning",
+    models: ["yi-lightning", "yi-large", "yi-large-turbo", "yi-medium", "yi-spark"]
   },
   {
     id: "anthropic",
     name: "Anthropic (Claude)",
     baseUrl: "https://api.anthropic.com/v1",
-    defaultModel: "claude-opus-4-20250514",
+    defaultModel: "claude-sonnet-4-20250514",
     models: ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-5-haiku-20241022"]
   },
   {
     id: "google",
     name: "Google (Gemini)",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    defaultModel: "gemini-2.5-pro",
-    models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-pro-preview", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
+    defaultModel: "gemini-2.5-flash",
+    models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    defaultModel: "anthropic/claude-sonnet-4",
+    models: ["anthropic/claude-sonnet-4", "anthropic/claude-opus-4", "google/gemini-2.5-pro", "google/gemini-2.5-flash", "meta-llama/llama-4-maverick", "deepseek/deepseek-r1"]
   },
   {
     id: "custom",
