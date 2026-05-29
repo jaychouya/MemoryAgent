@@ -33,7 +33,12 @@ class LLMService:
         tools: List[Dict] = None
     ) -> Dict[str, Any]:
         if not self.client:
-            msg = message or (messages[0].get("content", "") if messages else "")
+            msg = message or ""
+            if messages:
+                for m in messages:
+                    if m.get("role") == "user":
+                        msg = m.get("content", "")
+                        break
             return {
                 "content": self._fallback_response(msg, is_configured=False),
                 "stop_reason": "end_turn"
