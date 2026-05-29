@@ -26,10 +26,7 @@ class Message(BaseModel):
         return {
             "message_id": self.message_id,
             "content": self.content,
-            "role": self.role.value,
+            "role": self.role if isinstance(self.role, str) else self.role.value,
             "timestamp": self.timestamp.isoformat(),
             "metadata": self.metadata
         }
-    
-    class Config:
-        use_enum_values = True

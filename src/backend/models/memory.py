@@ -66,11 +66,17 @@ class EpisodicMemoryItem(MemoryBase):
     """Episodic memory item - important events and experiences."""
     
     layer: MemoryLayer = MemoryLayer.EPISODIC
-    description: str
-    emotion: Optional[str] = None  # happy, sad, excited, neutral, etc.
+    content: str = ""
+    description: str = ""
+    emotion: Optional[str] = None
     importance: float = Field(default=0.5, ge=0.0, le=1.0)
     related_episodes: List[str] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=datetime.now)
+    
+    def __init__(self, **data):
+        if 'content' not in data or not data['content']:
+            data['content'] = data.get('description', '')
+        super().__init__(**data)
 
 
 class MemorySearchResult(BaseModel):

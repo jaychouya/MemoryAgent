@@ -210,9 +210,12 @@ class ShortTermMemory:
 
 # SQLAlchemy model
 from sqlalchemy import Column, String, Float, DateTime, JSON, LargeBinary
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
 
 
-class ShortTermMemoryRecord:
+class ShortTermMemoryRecord(Base):
     """SQLAlchemy model for short-term memory."""
     
     __tablename__ = "short_term_memories"
@@ -220,7 +223,7 @@ class ShortTermMemoryRecord:
     id = Column(String, primary_key=True)
     user_id = Column(String, nullable=False, index=True)
     content = Column(String, nullable=False)
-    embedding = Column(LargeBinary)  # Store as binary for simplicity
+    embedding = Column(LargeBinary)
     memory_type = Column(String, default="general")
     importance_score = Column(Float, default=0.5)
     created_at = Column(DateTime, default=datetime.now)

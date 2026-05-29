@@ -184,8 +184,13 @@ class DecisionEngine:
         """
         input_lower = user_input.lower()
         
-        # Simple keyword-based classification for demo
-        if any(kw in input_lower for kw in ["delete", "remove", "删除"]):
+        if any(kw in input_lower for kw in ["transfer", "money", "account", "转账", "账户"]):
+            return {
+                "action": "financial_transaction",
+                "description": "金融交易",
+                "confidence": 0.9
+            }
+        elif any(kw in input_lower for kw in ["delete", "remove", "删除"]):
             return {
                 "action": "memory_delete",
                 "description": "删除记忆",
