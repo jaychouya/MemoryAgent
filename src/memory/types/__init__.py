@@ -1,0 +1,148 @@
+"""
+Memory types for MemoryAI Agent.
+
+Inspired by Claude Code's four-type memory classification:
+- user: User profile, preferences, knowledge level
+- feedback: Behavioral feedback, what to do/not do
+- project: Project dynamics, deadlines, decisions
+- reference: External pointers, where to find information
+"""
+
+from enum import Enum
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+import hashlib
+
+
+class MemoryType(str, Enum):
+    """
+    Four types of memory.
+    
+    Each type serves a specific purpose:
+    - USER: Who the user is, their preferences
+    - FEEDBACK: Behavioral rules, do's and don'ts
+    - PROJECT: What's happening, deadlines, decisions
+    - REFERENCE: Where to find external information
+    """
+    USER = "user"
+    FEEDBACK = "feedback"
+    PROJECT = "project"
+    REFERENCE = "reference"
+
+
+@dataclass
+class MemoryItem:
+    """
+    A single memory item.
+    
+    Each memory has:
+    - id: Unique identifier
+    - type: One of the four memory types
+    - content: The actual memory content
+    - description: One-line summary for retrieval
+    - metadata: Additional information
+    - created_at: Creation timestamp
+    - updated_at: Last update timestamp
+    - access_count: How many times this memory was accessed
+    """
+    id: str
+    type: MemoryType
+    content: str
+    description: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    access_count: int = 0
+    
+    @classmethod
+    def create(
+        cls,
+        memory_type: MemoryType,
+        content: str,
+        description: str = None,
+        metadata: Dict[str, Any] = None
+    ) -> "MemoryItem":
+        """Create a new memory item with auto-generated ID."""
+        # Generate ID from content hash
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:8]
+        memory_id = f"{memory_type.value}_{content_hash}"
+        
+        return cls(
+            id=memory_id,
+            type=memory_type,
+            content=content,
+            description=description or content[:50],
+            metadata=metadata or {}
+        )
+    
+    def to_markdown(self) -> str:
+        """Convert memory to markdown format for storage."""
+        lines = [
+            "---",
+            f"name: {self.id}",
+            f"description: {self.description}",
+            f"type: {self.type.value}",
+            f"created: {self.created_at.isoformat()}",
+            f"updated: {self.updated_at.isoformat()}",
+            "---",
+            "",
+            self.content
+        ]
+        return "\n".join(lines)
+    
+    @classmethod
+    def from_markdown(cls, markdown: str, memory_id: str = None) -> "MemoryItem":
+        """Parse memory from markdown format."""
+        lines = markdown.split("\n")
+        
+        # Parse frontmatter
+        metadata = {}
+        content_start = 0
+        in_frontmatter = False
+        
+        for i, line in enumerate(lines):
+            if line.strip() == "---":
+                if in_frontmatter:
+                    content_start = i + 1
+                    break
+                in_frontmatter = True
+                continue
+            
+            if in_frontmatter and ":" in line:
+                key, value = line.split(":", 1)
+                metadata[key.strip()] = value.strip()
+        
+        # Get content
+        content = "\n".join(lines[content_start:]).strip()
+        
+        return cls(
+            id=memory_id or metadata.get("name", "unknown"),
+            type=MemoryType(metadata.get("type", "user")),
+            content=content,
+            description=metadata.get("description", ""),
+            created_at=datetime.fromisoformat(metadata.get("created", datetime.now().isoformat())),
+            updated_at=datetime.fromisoformat(metadata.get("updated", datetime.now().isoformat()))
+        )
+    
+    def touch(self):
+        """Update access timestamp and count."""
+        self.updated_at = datetime.now()
+        self.access_count += 1
+    
+    def age_days(self) -> int:
+        """Get age in days."""
+        return (datetime.now() - self.updated_at).days
+    
+    def is_stale(self, max_days: int = 1) -> bool:
+        """Check if memory is stale (older than max_days)."""
+        return self.age_days() > max_days
+
+
+# Memory type descriptions for prompt injection
+MEMORY_TYPE_DESCRIPTIONS = {
+    MemoryType.USER: "用户画像：角色、偏好、知识水平",
+    MemoryType.FEEDBACK: "行为反馈：该做什么、不该做什么",
+    MemoryType.PROJECT: "项目动态：在做什么、截止日期、协作信息",
+    MemoryType.REFERENCE: "外部指针：哪里能找到什么信息",
+}

@@ -22,6 +22,7 @@ import asyncio
 from datetime import datetime
 
 from src.agent.prompts.assembler import get_prompt_assembler
+from src.agent.context import ContextCompressor
 
 logger = logging.getLogger(__name__)
 
@@ -82,20 +83,10 @@ class AgentLoop:
         context_manager=None,
         max_turns: int = 50
     ):
-        """
-        Initialize agent loop.
-        
-        Args:
-            llm_service: LLM API service
-            tool_registry: Tool registry for executing tools
-            memory_manager: Memory system for retrieval
-            context_manager: Context compression manager
-            max_turns: Maximum loop iterations
-        """
         self.llm = llm_service
         self.tools = tool_registry
         self.memory = memory_manager
-        self.context = context_manager
+        self.context = context_manager or ContextCompressor(llm_service)
         self.max_turns = max_turns
     
     async def run(

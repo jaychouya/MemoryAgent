@@ -1,252 +1,182 @@
+"""
+Enhanced Memory Manager for MemoryAI Agent.
+
+Implements Claude Code's memory architecture:
+- Four-type memory classification
+- File-based storage with markdown
+- LLM-based retrieval
+- Exclusion rules
+"""
+
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from src.backend.models.message import Message
-from src.backend.models.memory import (
-    ShortTermMemoryItem,
-    LongTermMemoryItem,
-    EpisodicMemoryItem,
-    MemorySearchResult,
-    MemoryLayer
-)
+from src.memory.types import MemoryItem, MemoryType
+from src.memory.storage import MemoryStorage
+from src.memory.retrieval import MemoryRetrieval
+from src.memory.exclusions import should_exclude, get_exclusion_reason
 
 logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
     """
-    Central memory manager coordinating all memory layers.
+    Central memory manager with Claude Code-style architecture.
     
-    Responsibilities:
-    - Route memories to appropriate layers
-    - Coordinate retrieval across layers
-    - Trigger memory consolidation
-    - Extract memories from conversations
+    Key features:
+    1. Four-type memory classification
+    2. File-based storage (markdown + YAML)
+    3. LLM-based retrieval
+    4. Exclusion rules
+    5. Staleness detection
     """
     
     def __init__(
         self,
-        working_memory,
-        short_term_memory,
-        long_term_memory,
-        episodic_memory
+        storage_dir: str = "memories",
+        llm_service=None
     ):
-        """Initialize memory manager with all layers."""
-        self.working = working_memory
-        self.short_term = short_term_memory
-        self.long_term = long_term_memory
-        self.episodic = episodic_memory
+        self.storage = MemoryStorage(storage_dir)
+        self.retrieval = MemoryRetrieval(self.storage, llm_service)
+        self.llm = llm_service
     
-    async def process_message(
+    async def store(
         self,
-        session_id: str,
-        user_id: str,
-        message: Message
-    ) -> Dict[str, Any]:
+        content: str,
+        memory_type: MemoryType,
+        description: str = None,
+        user_id: str = None,
+        metadata: Dict[str, Any] = None
+    ) -> Optional[MemoryItem]:
         """
-        Process a new message through the memory system.
+        Store a new memory.
         
         Args:
-            session_id: Current session identifier
+            content: Memory content
+            memory_type: Type of memory
+            description: One-line description
             user_id: User identifier
-            message: New message to process
+            metadata: Additional metadata
             
         Returns:
-            Dictionary with memory update information
+            Stored MemoryItem or None if excluded
         """
-        updates = {
-            "working": False,
-            "short_term": False,
-            "extracted_memories": []
-        }
+        # Check exclusion rules
+        if should_exclude(content, memory_type.value):
+            reason = get_exclusion_reason(content)
+            logger.info(f"Memory excluded ({reason.value}): {content[:50]}...")
+            return None
         
-        # 1. Add to working memory
-        await self.working.add_message(session_id, message)
-        updates["working"] = True
+        # Create memory item
+        memory = MemoryItem.create(
+            memory_type=memory_type,
+            content=content,
+            description=description,
+            metadata={
+                "user_id": user_id,
+                **(metadata or {})
+            }
+        )
         
-        # 2. Extract potential memories from message
-        extracted = await self._extract_memories(message)
+        # Store
+        success = await self.storage.store(memory)
         
-        # 3. Store extracted memories in appropriate layers
-        for memory in extracted:
-            if memory["type"] == "preference":
-                # Store preferences in short-term initially
-                item = ShortTermMemoryItem(
-                    user_id=user_id,
-                    content=memory["content"],
-                    importance_score=memory.get("confidence", 0.5),
-                    memory_type="preference"
-                )
-                await self.short_term.store(item)
-                updates["short_term"] = True
-                updates["extracted_memories"].append(memory)
-            
-            elif memory["type"] == "event":
-                # Store events in episodic memory
-                item = EpisodicMemoryItem(
-                    user_id=user_id,
-                    description=memory["content"],
-                    emotion=memory.get("emotion"),
-                    importance=memory.get("importance", 0.5)
-                )
-                await self.episodic.store_episode(item)
-                updates["extracted_memories"].append(memory)
-        
-        return updates
+        if success:
+            return memory
+        return None
     
     async def retrieve(
         self,
-        user_id: str,
         query: str,
-        session_id: Optional[str] = None,
-        top_k: int = 10
-    ) -> List[MemorySearchResult]:
+        user_id: str = None,
+        session_id: str = None,
+        top_k: int = 5
+    ) -> List[Dict]:
         """
-        Retrieve relevant memories across all layers.
+        Retrieve relevant memories.
         
         Args:
-            user_id: User identifier
             query: Search query
-            session_id: Current session (for working memory)
-            top_k: Maximum results to return
-            
-        Returns:
-            List of memory search results, ranked by relevance
-        """
-        all_results: List[MemorySearchResult] = []
-        
-        # 1. Get working memory context
-        if session_id:
-            working_context = await self.working.get_context(session_id)
-            # Add recent messages as context
-            for msg in working_context[-3:]:
-                all_results.append(MemorySearchResult(
-                    memory=type('obj', (object,), {
-                        'content': msg.get('content', ''),
-                        'layer': MemoryLayer.WORKING,
-                        'to_dict': lambda: msg
-                    })(),
-                    score=0.5,  # Lower priority for working memory
-                    retrieval_method="context"
-                ))
-        
-        # 2. Search short-term memory
-        try:
-            short_term_results = await self.short_term.search(
-                user_id=user_id,
-                query=query,
-                top_k=top_k // 2
-            )
-            all_results.extend(short_term_results)
-        except Exception as e:
-            logger.error(f"Error searching short-term memory: {e}")
-        
-        # 3. Search long-term memory
-        try:
-            long_term_results = await self.long_term.retrieve(
-                user_id=user_id,
-                query=query,
-                top_k=top_k // 2
-            )
-            all_results.extend(long_term_results)
-        except Exception as e:
-            logger.error(f"Error searching long-term memory: {e}")
-        
-        # 4. Search episodic memory
-        try:
-            episodic_results = await self.episodic.search(
-                user_id=user_id,
-                query=query,
-                top_k=top_k // 4
-            )
-            all_results.extend(episodic_results)
-        except Exception as e:
-            logger.error(f"Error searching episodic memory: {e}")
-        
-        # 5. Sort by relevance score and return top_k
-        all_results.sort(key=lambda x: x.score, reverse=True)
-        return all_results[:top_k]
-    
-    async def consolidate(self, user_id: str) -> Dict[str, int]:
-        """
-        Run memory consolidation - move important short-term memories to long-term.
-        
-        Args:
             user_id: User identifier
+            session_id: Session identifier
+            top_k: Maximum results
             
         Returns:
-            Statistics about consolidation
+            List of memory dicts with content and metadata
         """
-        stats = {"consolidated": 0, "deleted": 0, "errors": 0}
-        
-        # Get expired short-term memories
-        expired = await self.short_term.get_expired(user_id)
-        
-        for memory in expired:
-            try:
-                # Check if memory is important enough to keep
-                if memory.importance_score >= 0.7:
-                    # Move to long-term memory
-                    long_term_item = LongTermMemoryItem(
-                        user_id=user_id,
-                        content=memory.content,
-                        category=self._categorize_content(memory.content),
-                        confidence=memory.importance_score
-                    )
-                    await self.long_term.store(long_term_item)
-                    stats["consolidated"] += 1
-                
-                # Delete from short-term
-                await self.short_term.delete(memory.memory_id)
-                stats["deleted"] += 1
-                
-            except Exception as e:
-                logger.error(f"Error consolidating memory {memory.memory_id}: {e}")
-                stats["errors"] += 1
-        
-        logger.info(f"Consolidation complete for user {user_id}: {stats}")
-        return stats
+        return await self.retrieval.retrieve(
+            query=query,
+            user_id=user_id,
+            limit=top_k
+        )
     
-    async def _extract_memories(self, message: Message) -> List[Dict[str, Any]]:
-        """
-        Extract potential memories from a message.
-        
-        This is a simplified version - in production, use LLM for extraction.
-        """
-        memories = []
-        content = message.content.lower()
-        
-        # Simple pattern matching for demo
-        preference_patterns = [
-            "i like", "i love", "i prefer", "i enjoy",
-            "my favorite", "i hate", "i dislike"
-        ]
-        
-        for pattern in preference_patterns:
-            if pattern in content:
-                memories.append({
-                    "type": "preference",
-                    "content": message.content,
-                    "confidence": 0.7
-                })
-                break
-        
-        return memories
+    async def store_user_preference(
+        self,
+        preference: str,
+        user_id: str
+    ) -> Optional[MemoryItem]:
+        """Store a user preference."""
+        return await self.store(
+            content=preference,
+            memory_type=MemoryType.USER,
+            description=f"用户偏好: {preference[:30]}",
+            user_id=user_id
+        )
     
-    def _categorize_content(self, content: str) -> str:
-        """Categorize memory content for long-term storage."""
-        content_lower = content.lower()
+    async def store_feedback(
+        self,
+        rule: str,
+        reason: str,
+        user_id: str
+    ) -> Optional[MemoryItem]:
+        """Store a behavioral feedback rule."""
+        content = f"{rule}\n\n**原因:** {reason}"
+        return await self.store(
+            content=content,
+            memory_type=MemoryType.FEEDBACK,
+            description=f"行为规则: {rule[:30]}",
+            user_id=user_id
+        )
+    
+    async def store_project_info(
+        self,
+        info: str,
+        deadline: str = None,
+        user_id: str = None
+    ) -> Optional[MemoryItem]:
+        """Store project information."""
+        content = info
+        if deadline:
+            content += f"\n\n**截止日期:** {deadline}"
         
-        categories = {
-            "food": ["food", "eat", "drink", "coffee", "tea", "restaurant"],
-            "hobby": ["hobby", "enjoy", "fun", "game", "sport"],
-            "work": ["work", "job", "project", "meeting"],
-            "health": ["health", "exercise", "gym", "doctor"]
-        }
-        
-        for category, keywords in categories.items():
-            if any(kw in content_lower for kw in keywords):
-                return category
-        
-        return "general"
+        return await self.store(
+            content=content,
+            memory_type=MemoryType.PROJECT,
+            description=f"项目信息: {info[:30]}",
+            user_id=user_id
+        )
+    
+    async def store_reference(
+        self,
+        what: str,
+        where: str,
+        user_id: str = None
+    ) -> Optional[MemoryItem]:
+        """Store an external reference pointer."""
+        content = f"**{what}**\n\n位置: {where}"
+        return await self.store(
+            content=content,
+            memory_type=MemoryType.REFERENCE,
+            description=f"外部引用: {what[:30]}",
+            user_id=user_id
+        )
+    
+    async def get_stats(self) -> Dict[str, int]:
+        """Get memory statistics."""
+        return await self.storage.get_stats()
+    
+    async def format_for_prompt(self, query: str, user_id: str = None) -> str:
+        """Get formatted memories for system prompt."""
+        memories = await self.retrieve(query, user_id)
+        return await self.retrieval.format_for_prompt(memories)
