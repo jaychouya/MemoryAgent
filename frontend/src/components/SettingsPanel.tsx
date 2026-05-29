@@ -15,50 +15,112 @@ const PROVIDERS: ModelProvider[] = [
     id: "openai",
     name: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
-    defaultModel: "gpt-4",
-    models: ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"]
+    defaultModel: "gpt-4o",
+    models: ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-pro", "o3-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"]
   },
   {
     id: "dashscope",
     name: "百炼 (阿里云)",
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    defaultModel: "qwen-turbo",
-    models: ["qwen-turbo", "qwen-plus", "qwen-max", "qwen-long"]
+    defaultModel: "qwen-max-latest",
+    models: ["qwen-max-latest", "qwen-plus-latest", "qwen-turbo-latest", "qwen-long-latest", "qwen2.5-72b-instruct", "qwen2.5-32b-instruct", "qwen2.5-14b-instruct", "qwen2.5-7b-instruct", "qwq-32b"]
   },
   {
     id: "siliconflow",
     name: "硅基流动",
     baseUrl: "https://api.siliconflow.cn/v1",
-    defaultModel: "Qwen/Qwen2-7B-Instruct",
-    models: ["Qwen/Qwen2-7B-Instruct", "Qwen/Qwen2-72B-Instruct", "deepseek-ai/DeepSeek-V2-Chat"]
+    defaultModel: "Qwen/Qwen2.5-72B-Instruct",
+    models: [
+      "Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-14B-Instruct", "Qwen/Qwen2.5-32B-Instruct", "Qwen/Qwen2.5-72B-Instruct",
+      "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
+      "Pro/deepseek-ai/DeepSeek-V3", "Pro/deepseek-ai/DeepSeek-R1",
+      "meta-llama/Meta-Llama-3.1-8B-Instruct", "meta-llama/Meta-Llama-3.1-70B-Instruct",
+      "internlm/internlm2_5-7b-chat", "THUDM/glm-4-9b-chat"
+    ]
   },
   {
     id: "xiaomi",
     name: "小米 (MiLM)",
     baseUrl: "https://api.xiaomi.com/v1",
-    defaultModel: "milm-6b",
-    models: ["milm-6b", "milm-13b"]
+    defaultModel: "milm-7b",
+    models: ["milm-7b", "milm-13b", "milm-65b"]
   },
   {
     id: "zhipu",
     name: "智谱 (GLM)",
     baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    defaultModel: "glm-4",
-    models: ["glm-4", "glm-4-flash", "glm-3-turbo"]
+    defaultModel: "glm-4-plus",
+    models: ["glm-4-plus", "glm-4-0520", "glm-4-air", "glm-4-airx", "glm-4-long", "glm-4-flash", "glm-4-flashx", "glm-4v-plus", "glm-4v", "codegeex-4"]
   },
   {
     id: "moonshot",
     name: "月之暗面 (Kimi)",
     baseUrl: "https://api.moonshot.cn/v1",
-    defaultModel: "moonshot-v1-8k",
-    models: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]
+    defaultModel: "moonshot-v1-auto",
+    models: ["moonshot-v1-auto", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]
   },
   {
     id: "deepseek",
     name: "DeepSeek",
     baseUrl: "https://api.deepseek.com/v1",
     defaultModel: "deepseek-chat",
-    models: ["deepseek-chat", "deepseek-coder"]
+    models: ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"]
+  },
+  {
+    id: "baidu",
+    name: "百度 (文心一言)",
+    baseUrl: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop",
+    defaultModel: "ernie-4.0-8k",
+    models: ["ernie-4.0-8k", "ernie-4.0-turbo-8k", "ernie-3.5-8k", "ernie-3.5-128k", "ernie-speed-128k", "ernie-lite-8k", "ernie-speed-appbuilder"]
+  },
+  {
+    id: "bytedance",
+    name: "字节 (豆包)",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    defaultModel: "doubao-1.5-pro-256k",
+    models: ["doubao-1.5-pro-256k", "doubao-1.5-pro-32k", "doubao-1.5-lite-32k", "doubao-pro-256k", "doubao-pro-32k", "doubao-pro-4k", "doubao-lite-32k", "doubao-lite-4k"]
+  },
+  {
+    id: "minimax",
+    name: "MiniMax",
+    baseUrl: "https://api.minimax.chat/v1",
+    defaultModel: "MiniMax-Text-01",
+    models: ["MiniMax-Text-01", "abab7-chat", "abab6.5s-chat", "abab6.5-chat"]
+  },
+  {
+    id: "spark",
+    name: "讯飞 (星火)",
+    baseUrl: "https://spark-api-open.xf-yun.com/v1",
+    defaultModel: "4.0Ultra",
+    models: ["4.0Ultra", "generalv3.5", "pro-128k", "generalv3", "max-32k"]
+  },
+  {
+    id: "yi",
+    name: "零一万物 (Yi)",
+    baseUrl: "https://api.lingyiwanwu.com/v1",
+    defaultModel: "yi-large",
+    models: ["yi-large", "yi-large-turbo", "yi-medium", "yi-spark", "yi-large-fc", "yi-lightning"]
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic (Claude)",
+    baseUrl: "https://api.anthropic.com/v1",
+    defaultModel: "claude-sonnet-4-20250514",
+    models: ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022", "claude-3-opus-20240229"]
+  },
+  {
+    id: "google",
+    name: "Google (Gemini)",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    defaultModel: "gemini-2.0-flash",
+    models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro", "gemini-1.5-flash"]
+  },
+  {
+    id: "custom",
+    name: "自定义 (OpenAI兼容)",
+    baseUrl: "",
+    defaultModel: "",
+    models: []
   }
 ];
 
