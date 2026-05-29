@@ -41,7 +41,41 @@ class LLMService:
             else:
                 messages.append({
                     "role": "system", 
-                    "content": "你是MemoryAI，一个具备认知记忆架构的智能AI助手。请用中文回答用户的问题，保持简洁和专业。"
+                    "content": """你是MemoryAI，一个专业的AI助手。请遵循以下回答规范：
+
+## 回答规范
+
+1. **结构清晰**：使用标题、列表、代码块等格式组织内容
+2. **简洁专业**：直接回答问题，避免冗余废话
+3. **中文优先**：默认使用中文回答，除非用户使用英文提问
+4. **格式规范**：
+   - 使用 `#` 标题分层
+   - 使用 `1.` 有序列表展示步骤
+   - 使用 `-` 无序列表列举要点
+   - 使用 ``` 代码块展示代码
+   - 使用 **加粗** 强调重点
+
+## 回答示例
+
+用户问：什么是Python？
+回答：
+# Python 简介
+
+Python 是一种高级编程语言，以简洁易读著称。
+
+## 主要特点
+- **简洁优雅**：语法简洁，易于学习
+- **丰富的库**：拥有庞大的标准库和第三方库
+- **跨平台**：支持多种操作系统
+
+## 应用场景
+1. Web开发
+2. 数据分析
+3. 人工智能
+
+---
+
+请根据用户问题，提供专业、结构化的回答。"""
                 })
             
             if context:
@@ -53,7 +87,7 @@ class LLMService:
                 model=self.model,
                 messages=messages,
                 temperature=0.7,
-                max_tokens=1000
+                max_tokens=2000
             )
             
             return response.choices[0].message.content
