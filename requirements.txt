@@ -1,0 +1,32 @@
+# Core
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# LangChain
+langchain==0.1.4
+langchain-openai==0.0.5
+langgraph==0.0.20
+
+# Database
+redis==5.0.1
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.25
+pgvector==0.2.4
+chromadb==0.4.22
+
+# Embedding
+openai==1.12.0
+tiktoken==0.5.2
+
+# Utilities
+python-dotenv==1.0.0
+networkx==3.2.1
+numpy==1.26.3
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-mock==3.12.0
+httpx==0.26.0
