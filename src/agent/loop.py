@@ -19,6 +19,9 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 from dataclasses import dataclass, field
 from enum import Enum
 import asyncio
+from datetime import datetime
+
+from src.agent.prompts.assembler import get_prompt_assembler
 
 logger = logging.getLogger(__name__)
 
@@ -288,28 +291,27 @@ class AgentLoop:
     
     def _build_system_prompt(self, memories: List = None) -> str:
         """
-        Build system prompt with memories.
+        Build system prompt with memories using the PromptAssembler.
         
-        This is a simplified version - Phase 2 will implement
-        full dynamic prompt assembly.
+        Follows Claude Code's dynamic assembly pattern:
+        - Static sections (cached)
+        - Cache boundary
+        - Dynamic sections (environment, memories)
         """
-        prompt = """你是MemoryAI，一个专业的AI助手。请遵循以下回答规范：
-
-## 回答规范
-
-1. **结构清晰**：使用标题、列表、代码块等格式组织内容
-2. **简洁专业**：直接回答问题，避免冗余废话
-3. **中文优先**：默认使用中文回答，除非用户使用英文提问
-
-## 工具使用
-
-当需要查询信息、执行操作时，请使用提供的工具。不要猜测或编造信息。
-
-"""
+        assembler = get_prompt_assembler()
         
+        environment_info = {
+            "timestamp": datetime.now().isoformat(),
+            "session_id": "current"
+        }
+        
+        memory_index = None
         if memories:
-            prompt += "\n## 相关记忆\n\n"
+            memory_index = "相关记忆：\n"
             for mem in memories:
-                prompt += f"- {mem.memory.content}\n"
+                memory_index += f"- {mem.memory.content}\n"
         
-        return prompt
+        return assembler.assemble(
+            environment_info=environment_info,
+            memory_index=memory_index
+        )
