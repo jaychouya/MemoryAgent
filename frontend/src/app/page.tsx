@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import SettingsPanel, { ModelConfig } from "@/components/SettingsPanel";
+import MemoryPanel from "@/components/MemoryPanel";
 
 export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
@@ -102,7 +103,7 @@ export default function Home() {
           <div className="p-3 border-b border-slate-100">
             <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">核心特性</h3>
             <div className="space-y-1">
-              {["自主决策引擎", "记忆可解释性", "智能遗忘"].map((feature) => (
+              {["Agent Loop", "动态Prompt", "四类型记忆", "上下文压缩", "Plan Mode"].map((feature) => (
                 <div key={feature} className="flex items-center gap-2 px-2 py-1">
                   <svg className="w-3 h-3 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -111,6 +112,11 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* 记忆系统状态 */}
+          <div className="border-b border-slate-100">
+            <MemoryPanel />
           </div>
 
           {/* 跨会话记忆共享 */}

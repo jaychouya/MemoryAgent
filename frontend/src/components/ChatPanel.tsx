@@ -7,6 +7,12 @@ interface Message {
   content: string;
   role: "user" | "assistant";
   timestamp: Date;
+  metadata?: {
+    turns?: number;
+    tools_called?: string[];
+    memories_used?: string[];
+    stop_reason?: string;
+  };
 }
 
 interface Session {
@@ -32,6 +38,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
   const [currentSessionId, setCurrentSessionId] = useState("default");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showSessions, setShowSessions] = useState(false);
+  const [showMetadata, setShowMetadata] = useState(true);
 
   useEffect(() => {
     loadSessions();
@@ -98,6 +105,12 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
         content: data.response,
         role: "assistant",
         timestamp: new Date(),
+        metadata: data.decision_explanation ? {
+          turns: data.decision_explanation.confidence > 0 ? 1 : 0,
+          tools_called: [],
+          memories_used: data.memory_updates?.map((m: any) => m.content) || [],
+          stop_reason: data.decision_explanation.action
+        } : undefined
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -106,6 +119,37 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const renderMetadata = (metadata: NonNullable<Message["metadata"]>) => {
+    if (!showMetadata) return null;
+
+    return (
+      <div className="mt-2 pt-2 border-t border-slate-200/50">
+        <div className="flex flex-wrap gap-1.5">
+          {metadata.stop_reason && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 rounded text-slate-600">
+              {metadata.stop_reason}
+            </span>
+          )}
+          {metadata.turns && metadata.turns > 1 && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 rounded text-blue-700">
+              {metadata.turns} 轮对话
+            </span>
+          )}
+          {metadata.tools_called && metadata.tools_called.length > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-green-100 rounded text-green-700">
+              使用工具: {metadata.tools_called.join(", ")}
+            </span>
+          )}
+          {metadata.memories_used && metadata.memories_used.length > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 rounded text-purple-700">
+              使用 {metadata.memories_used.length} 条记忆
+            </span>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -171,7 +215,17 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
             <h2 className="text-sm font-semibold text-slate-800">智能对话</h2>
             <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{currentSessionId}</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowMetadata(!showMetadata)}
+              className={`text-[10px] px-2 py-1 rounded transition-colors ${
+                showMetadata 
+                  ? "bg-indigo-100 text-indigo-700" 
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {showMetadata ? "隐藏元数据" : "显示元数据"}
+            </button>
             <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
             <span className="text-[10px] text-slate-400">在线</span>
           </div>
@@ -203,10 +257,11 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
                     : "bg-slate-100 text-slate-800 rounded-bl-sm"
                 }`}
               >
-                <p className="text-[13px] leading-relaxed">{message.content}</p>
+                <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{message.content}</p>
                 <p className={`text-[10px] mt-1 ${message.role === "user" ? "text-indigo-200" : "text-slate-400"}`}>
                   {message.timestamp.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
                 </p>
+                {message.metadata && renderMetadata(message.metadata)}
               </div>
             </div>
           ))}

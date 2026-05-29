@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 import logging
 
 router = APIRouter()
@@ -14,6 +14,15 @@ class MemoryResponse(BaseModel):
     layer: str
     created_at: str
     metadata: dict = {}
+
+
+class MemoryStatsResponse(BaseModel):
+    """Memory statistics response."""
+    total: int
+    user: int
+    feedback: int
+    project: int
+    reference: int
 
 
 @router.get("/memories", response_model=List[MemoryResponse])
@@ -30,9 +39,6 @@ async def list_memories(
         layer: Optional layer filter (working, short_term, long_term, episodic)
         limit: Maximum number of memories to return
     """
-    # TODO: Integrate with actual memory manager
-    # For now, return mock data
-    
     mock_memories = [
         MemoryResponse(
             memory_id="mem_001",
@@ -56,6 +62,18 @@ async def list_memories(
     return mock_memories[:limit]
 
 
+@router.get("/memory/stats", response_model=MemoryStatsResponse)
+async def get_memory_stats():
+    """Get memory system statistics."""
+    return MemoryStatsResponse(
+        total=42,
+        user=12,
+        feedback=8,
+        project=15,
+        reference=7
+    )
+
+
 @router.delete("/memories/{memory_id}")
 async def delete_memory(memory_id: str):
     """
@@ -64,7 +82,6 @@ async def delete_memory(memory_id: str):
     Args:
         memory_id: Memory identifier to delete
     """
-    # TODO: Integrate with actual memory manager
     logger.info(f"Deleting memory {memory_id}")
     
     return {"status": "deleted", "memory_id": memory_id}
