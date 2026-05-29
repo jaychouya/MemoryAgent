@@ -41,7 +41,7 @@ const PROVIDERS: ModelProvider[] = [
   {
     id: "xiaomi",
     name: "小米 (MiMo)",
-    baseUrl: "https://api.xiaomi.com/v1",
+    baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
     defaultModel: "mimo-v2.5-pro",
     models: ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2-pro", "mimo-v2", "mimo-v1.5-pro", "mimo-v1.5"]
   },
