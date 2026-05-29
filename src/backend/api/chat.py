@@ -3,19 +3,21 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import logging
 
+from src.backend.services import get_llm_service
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+sessions: Dict[str, List[Dict[str, str]]] = {}
+
 
 class ChatRequest(BaseModel):
-    """Chat request model."""
     message: str = Field(..., min_length=1, max_length=10000)
     session_id: str = Field(default="default")
     user_id: str = Field(default="anonymous")
 
 
 class MemoryUpdate(BaseModel):
-    """Memory update information."""
     type: str
     content: str
     layer: str
@@ -23,14 +25,12 @@ class MemoryUpdate(BaseModel):
 
 
 class DecisionExplanation(BaseModel):
-    """Decision explanation."""
     action: str
     confidence: float
     reasoning: str
 
 
 class ChatResponse(BaseModel):
-    """Chat response model."""
     response: str
     memory_updates: List[MemoryUpdate] = []
     decision_explanation: Optional[DecisionExplanation] = None
@@ -38,42 +38,80 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """
-    Process a chat message.
-    
-    This endpoint:
-    1. Receives user message
-    2. Processes through memory system
-    3. Generates response
-    4. Returns response with memory updates
-    """
     try:
-        # TODO: Integrate with actual agent and memory manager
-        # For now, return a mock response
+        session_key = f"{request.user_id}:{request.session_id}"
+        if session_key not in sessions:
+            sessions[session_key] = []
         
-        response = f"I received your message: '{request.message}'. "
+        sessions[session_key].append({
+            "role": "user",
+            "content": request.message
+        })
         
-        # Simulate memory extraction
+        if len(sessions[session_key]) > 10:
+            sessions[session_key] = sessions[session_key][-10:]
+        
+        llm = get_llm_service()
+        
+        response_text = await llm.generate_response(
+            message=request.message,
+            context=sessions[session_key][:-1]
+        )
+        
+        sessions[session_key].append({
+            "role": "assistant",
+            "content": response_text
+        })
+        
         memory_updates = []
-        if "like" in request.message.lower() or "喜欢" in request.message:
+        if "喜欢" in request.message or "like" in request.message.lower():
             memory_updates.append(MemoryUpdate(
                 type="preference",
                 content=request.message,
                 layer="short_term",
                 action="created"
             ))
-            response += "I'll remember your preference!"
         
         return ChatResponse(
-            response=response,
+            response=response_text,
             memory_updates=memory_updates,
             decision_explanation=DecisionExplanation(
                 action="response_generation",
                 confidence=0.9,
-                reasoning="Processed user message and extracted preferences"
+                reasoning="Generated response using LLM with conversation context"
             )
         )
         
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return ChatResponse(
+            response="抱歉，处理您的消息时出现了问题。请稍后再试。",
+            memory_updates=[],
+            decision_explanation=DecisionExplanation(
+                action="error_fallback",
+                confidence=0.0,
+                reasoning=f"Error: {str(e)}"
+            )
+        )
+
+
+@router.get("/sessions")
+async def list_sessions(user_id: str = "anonymous"):
+    user_sessions = []
+    for key in sessions.keys():
+        if key.startswith(f"{user_id}:"):
+            session_id = key.split(":")[1]
+            user_sessions.append({
+                "session_id": session_id,
+                "message_count": len(sessions[key])
+            })
+    return {"sessions": user_sessions}
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str, user_id: str = "anonymous"):
+    session_key = f"{user_id}:{session_id}"
+    if session_key in sessions:
+        del sessions[session_key]
+        return {"status": "deleted", "session_id": session_id}
+    raise HTTPException(status_code=404, detail="Session not found")
