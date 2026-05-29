@@ -7,11 +7,16 @@ import SettingsPanel, { ModelConfig } from "@/components/SettingsPanel";
 export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
+  const [crossSessionEnabled, setCrossSessionEnabled] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("modelConfig");
     if (saved) {
       setModelConfig(JSON.parse(saved));
+    }
+    const crossSession = localStorage.getItem("crossSessionEnabled");
+    if (crossSession) {
+      setCrossSessionEnabled(JSON.parse(crossSession));
     }
   }, []);
 
@@ -97,7 +102,7 @@ export default function Home() {
           <div className="p-3 border-b border-slate-100">
             <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">核心特性</h3>
             <div className="space-y-1">
-              {["自主决策引擎", "记忆可解释性", "跨会话共享", "智能遗忘"].map((feature) => (
+              {["自主决策引擎", "记忆可解释性", "智能遗忘"].map((feature) => (
                 <div key={feature} className="flex items-center gap-2 px-2 py-1">
                   <svg className="w-3 h-3 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -105,6 +110,26 @@ export default function Home() {
                   <span className="text-[11px] text-slate-600">{feature}</span>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* 跨会话记忆共享 */}
+          <div className="p-3 border-b border-slate-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-medium text-slate-700">跨会话记忆共享</p>
+                <p className="text-[10px] text-slate-400">不同对话间共享记忆</p>
+              </div>
+              <button
+                onClick={() => {
+                  const next = !crossSessionEnabled;
+                  setCrossSessionEnabled(next);
+                  localStorage.setItem("crossSessionEnabled", JSON.stringify(next));
+                }}
+                className={`relative w-10 h-5 rounded-full transition-colors ${crossSessionEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+              >
+                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${crossSessionEnabled ? 'translate-x-5' : ''}`}></div>
+              </button>
             </div>
           </div>
 
