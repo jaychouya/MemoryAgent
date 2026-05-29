@@ -267,6 +267,16 @@ export default function SettingsPanel({ isOpen, onClose, onSave, currentConfig }
                 <p className="text-xs text-blue-600 mt-1">
                   选择厂商后，API地址和模型会自动填入。你只需要填写 API Key 即可开始使用。
                 </p>
+                {selectedProvider === "anthropic" && (
+                  <p className="text-xs text-amber-600 mt-1 font-medium">
+                    ⚠️ Anthropic Claude 使用专用API格式，需要通过 OpenRouter 等兼容服务接入
+                  </p>
+                )}
+                {selectedProvider === "google" && (
+                  <p className="text-xs text-amber-600 mt-1 font-medium">
+                    ⚠️ Google Gemini 使用专用API格式，需要通过 OpenRouter 等兼容服务接入
+                  </p>
+                )}
               </div>
             </div>
           </div>

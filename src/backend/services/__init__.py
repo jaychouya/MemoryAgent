@@ -65,8 +65,12 @@ class LLMService:
                 return self._fallback_response(message, is_configured=True, error="API Key 无效，请检查并重新配置。")
             elif "429" in error_msg:
                 return self._fallback_response(message, is_configured=True, error="请求过于频繁，请稍后再试。")
+            elif "Connection error" in error_msg or "connect" in error_msg.lower():
+                return self._fallback_response(message, is_configured=True, error=f"无法连接到AI服务 ({self.base_url})，请检查API地址是否正确。")
+            elif "404" in error_msg:
+                return self._fallback_response(message, is_configured=True, error=f"模型 '{self.model}' 不存在，请检查模型名称是否正确。")
             else:
-                return self._fallback_response(message, is_configured=True, error="AI服务暂时不可用，请稍后再试。")
+                return self._fallback_response(message, is_configured=True, error=f"AI服务出错: {error_msg[:100]}")
     
     def _fallback_response(self, message: str, is_configured: bool = False, error: str = None) -> str:
         message_lower = message.lower()
