@@ -4,14 +4,17 @@ from typing import List, Dict, Any, Optional
 import logging
 
 from src.backend.services import get_llm_service, LLMService
+from src.agent.loop import AgentLoop
+from src.agent.tools.registry import get_tool_registry
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 sessions: Dict[str, List[Dict[str, str]]] = {}
 
-# 全局模型配置
 global_model_config: Optional[Dict[str, str]] = None
+
+_agent_loop: Optional[AgentLoop] = None
 
 
 class ModelConfigRequest(BaseModel):
@@ -46,20 +49,24 @@ class ChatResponse(BaseModel):
     decision_explanation: Optional[DecisionExplanation] = None
 
 
+def get_agent_loop(llm_service) -> AgentLoop:
+    global _agent_loop
+    if _agent_loop is None:
+        registry = get_tool_registry()
+        _agent_loop = AgentLoop(
+            llm_service=llm_service,
+            tool_registry=registry,
+            max_turns=10
+        )
+    return _agent_loop
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
         session_key = f"{request.user_id}:{request.session_id}"
         if session_key not in sessions:
             sessions[session_key] = []
-        
-        sessions[session_key].append({
-            "role": "user",
-            "content": request.message
-        })
-        
-        if len(sessions[session_key]) > 10:
-            sessions[session_key] = sessions[session_key][-10:]
         
         if request.llm_config:
             llm = LLMService(
@@ -76,32 +83,44 @@ async def chat(request: ChatRequest):
         else:
             llm = get_llm_service()
         
-        response_text = await llm.generate_response(
-            message=request.message,
-            context=sessions[session_key][:-1]
+        agent = get_agent_loop(llm)
+        
+        result = await agent.run(
+            user_message=request.message,
+            context_messages=sessions[session_key],
+            session_id=request.session_id,
+            user_id=request.user_id
         )
         
         sessions[session_key].append({
+            "role": "user",
+            "content": request.message
+        })
+        sessions[session_key].append({
             "role": "assistant",
-            "content": response_text
+            "content": result.content
         })
         
+        if len(sessions[session_key]) > 20:
+            sessions[session_key] = sessions[session_key][-20:]
+        
         memory_updates = []
-        if "喜欢" in request.message or "like" in request.message.lower():
-            memory_updates.append(MemoryUpdate(
-                type="preference",
-                content=request.message,
-                layer="short_term",
-                action="created"
-            ))
+        if result.state and result.state.memories_used:
+            for mem in result.state.memories_used:
+                memory_updates.append(MemoryUpdate(
+                    type="retrieved",
+                    content=mem,
+                    layer="memory",
+                    action="used"
+                ))
         
         return ChatResponse(
-            response=response_text,
+            response=result.content,
             memory_updates=memory_updates,
             decision_explanation=DecisionExplanation(
-                action="response_generation",
+                action=result.stop_reason.value,
                 confidence=0.9,
-                reasoning="Generated response using LLM with conversation context"
+                reasoning=f"Agent completed in {result.state.turn_count} turns"
             )
         )
         

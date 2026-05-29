@@ -26,20 +26,26 @@ class LLMService:
     
     async def generate_response(
         self, 
-        message: str, 
+        message: str = None,
+        messages: List[Dict[str, str]] = None,
         context: List[Dict[str, str]] = None,
-        system_prompt: str = None
-    ) -> str:
+        system_prompt: str = None,
+        tools: List[Dict] = None
+    ) -> Dict[str, Any]:
         if not self.client:
-            return self._fallback_response(message, is_configured=False)
+            msg = message or (messages[0].get("content", "") if messages else "")
+            return {
+                "content": self._fallback_response(msg, is_configured=False),
+                "stop_reason": "end_turn"
+            }
         
         try:
-            messages = []
+            api_messages = []
             
             if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
+                api_messages.append({"role": "system", "content": system_prompt})
             else:
-                messages.append({
+                api_messages.append({
                     "role": "system", 
                     "content": """你是MemoryAI，一个专业的AI助手。请遵循以下回答规范：
 
@@ -48,49 +54,50 @@ class LLMService:
 1. **结构清晰**：使用标题、列表、代码块等格式组织内容
 2. **简洁专业**：直接回答问题，避免冗余废话
 3. **中文优先**：默认使用中文回答，除非用户使用英文提问
-4. **格式规范**：
-   - 使用 `#` 标题分层
-   - 使用 `1.` 有序列表展示步骤
-   - 使用 `-` 无序列表列举要点
-   - 使用 ``` 代码块展示代码
-   - 使用 **加粗** 强调重点
-
-## 回答示例
-
-用户问：什么是Python？
-回答：
-# Python 简介
-
-Python 是一种高级编程语言，以简洁易读著称。
-
-## 主要特点
-- **简洁优雅**：语法简洁，易于学习
-- **丰富的库**：拥有庞大的标准库和第三方库
-- **跨平台**：支持多种操作系统
-
-## 应用场景
-1. Web开发
-2. 数据分析
-3. 人工智能
-
----
 
 请根据用户问题，提供专业、结构化的回答。"""
                 })
             
-            if context:
-                messages.extend(context)
+            if messages:
+                api_messages.extend(messages)
+            elif context:
+                api_messages.extend(context)
+                api_messages.append({"role": "user", "content": message})
+            else:
+                api_messages.append({"role": "user", "content": message})
             
-            messages.append({"role": "user", "content": message})
+            kwargs = {
+                "model": self.model,
+                "messages": api_messages,
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
             
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=2000
-            )
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
             
-            return response.choices[0].message.content
+            response = await self.client.chat.completions.create(**kwargs)
+            
+            choice = response.choices[0]
+            result = {
+                "content": choice.message.content or "",
+                "stop_reason": choice.finish_reason
+            }
+            
+            if choice.message.tool_calls:
+                result["tool_calls"] = []
+                for tc in choice.message.tool_calls:
+                    result["tool_calls"].append({
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    })
+            
+            return result
             
         except Exception as e:
             logger.error(f"LLM generation error: {e}")
