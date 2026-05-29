@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import logging
 
-from src.backend.services import get_llm_service
+from src.backend.services import get_llm_service, LLMService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -11,10 +11,17 @@ logger = logging.getLogger(__name__)
 sessions: Dict[str, List[Dict[str, str]]] = {}
 
 
+class ModelConfigRequest(BaseModel):
+    api_key: str
+    base_url: str
+    model: str
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=10000)
     session_id: str = Field(default="default")
     user_id: str = Field(default="anonymous")
+    model_config: Optional[ModelConfigRequest] = None
 
 
 class MemoryUpdate(BaseModel):
@@ -51,7 +58,14 @@ async def chat(request: ChatRequest):
         if len(sessions[session_key]) > 10:
             sessions[session_key] = sessions[session_key][-10:]
         
-        llm = get_llm_service()
+        if request.model_config:
+            llm = LLMService(
+                api_key=request.model_config.api_key,
+                model=request.model_config.model
+            )
+            llm.base_url = request.model_config.base_url
+        else:
+            llm = get_llm_service()
         
         response_text = await llm.generate_response(
             message=request.message,

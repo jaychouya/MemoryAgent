@@ -8,15 +8,19 @@ logger = logging.getLogger(__name__)
 class LLMService:
     """Service for interacting with LLM APIs."""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4", base_url: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
+        self.base_url = base_url
         self.client = None
         
         if self.api_key:
             try:
                 from openai import AsyncOpenAI
-                self.client = AsyncOpenAI(api_key=self.api_key)
+                kwargs = {"api_key": self.api_key}
+                if self.base_url:
+                    kwargs["base_url"] = self.base_url
+                self.client = AsyncOpenAI(**kwargs)
             except Exception as e:
                 logger.warning(f"Failed to initialize OpenAI client: {e}")
     

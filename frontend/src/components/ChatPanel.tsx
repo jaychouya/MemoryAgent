@@ -14,7 +14,18 @@ interface Session {
   message_count: number;
 }
 
-export default function ChatPanel() {
+interface ModelConfig {
+  providerId: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+interface ChatPanelProps {
+  modelConfig?: ModelConfig | null;
+}
+
+export default function ChatPanel({ modelConfig }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -72,6 +83,11 @@ export default function ChatPanel() {
           message: input,
           session_id: currentSessionId,
           user_id: "demo-user",
+          model_config: modelConfig ? {
+            api_key: modelConfig.apiKey,
+            base_url: modelConfig.baseUrl,
+            model: modelConfig.model
+          } : null,
         }),
       });
 
