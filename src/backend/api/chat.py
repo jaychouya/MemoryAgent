@@ -21,7 +21,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=10000)
     session_id: str = Field(default="default")
     user_id: str = Field(default="anonymous")
-    model_config: Optional[ModelConfigRequest] = None
+    llm_config: Optional[ModelConfigRequest] = None
 
 
 class MemoryUpdate(BaseModel):
@@ -58,12 +58,12 @@ async def chat(request: ChatRequest):
         if len(sessions[session_key]) > 10:
             sessions[session_key] = sessions[session_key][-10:]
         
-        if request.model_config:
+        if request.llm_config:
             llm = LLMService(
-                api_key=request.model_config.api_key,
-                model=request.model_config.model
+                api_key=request.llm_config.api_key,
+                model=request.llm_config.model,
+                base_url=request.llm_config.base_url
             )
-            llm.base_url = request.model_config.base_url
         else:
             llm = get_llm_service()
         

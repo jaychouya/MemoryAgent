@@ -83,7 +83,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
           message: input,
           session_id: currentSessionId,
           user_id: "demo-user",
-          model_config: modelConfig ? {
+          llm_config: modelConfig ? {
             api_key: modelConfig.apiKey,
             base_url: modelConfig.baseUrl,
             model: modelConfig.model
