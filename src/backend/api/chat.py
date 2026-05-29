@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 sessions: Dict[str, List[Dict[str, str]]] = {}
 
+# 全局模型配置
+global_model_config: Optional[Dict[str, str]] = None
+
 
 class ModelConfigRequest(BaseModel):
     api_key: str
@@ -63,6 +66,12 @@ async def chat(request: ChatRequest):
                 api_key=request.llm_config.api_key,
                 model=request.llm_config.model,
                 base_url=request.llm_config.base_url
+            )
+        elif global_model_config:
+            llm = LLMService(
+                api_key=global_model_config["api_key"],
+                model=global_model_config["model"],
+                base_url=global_model_config["base_url"]
             )
         else:
             llm = get_llm_service()
@@ -129,3 +138,17 @@ async def delete_session(session_id: str, user_id: str = "anonymous"):
         del sessions[session_key]
         return {"status": "deleted", "session_id": session_id}
     raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.post("/config")
+async def save_config(config: ModelConfigRequest):
+    try:
+        global global_model_config
+        global_model_config = {
+            "api_key": config.api_key,
+            "base_url": config.base_url,
+            "model": config.model
+        }
+        return {"status": "success", "message": "配置已保存"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

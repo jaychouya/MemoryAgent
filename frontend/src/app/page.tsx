@@ -15,9 +15,19 @@ export default function Home() {
     }
   }, []);
 
-  const handleSaveConfig = (config: ModelConfig) => {
+  const handleSaveConfig = async (config: ModelConfig) => {
     setModelConfig(config);
     localStorage.setItem("modelConfig", JSON.stringify(config));
+    
+    await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: config.apiKey,
+        base_url: config.baseUrl,
+        model: config.model
+      }),
+    });
   };
 
   return (
