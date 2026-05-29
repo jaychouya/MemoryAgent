@@ -75,7 +75,7 @@ class LLMService:
                 "model": self.model,
                 "messages": api_messages,
                 "temperature": 0.7,
-                "max_tokens": 2000
+                "max_tokens": 4000
             }
             
             if tools:
