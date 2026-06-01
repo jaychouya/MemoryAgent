@@ -30,14 +30,58 @@ MemoryAgent 是一个具备**认知记忆架构**的智能 AI Agent，让 AI 记
 
 ## 🚀 快速开始
 
-### 方式一：DMG 安装包（推荐）
+### macOS
+
+#### 方式一：DMG 安装包（推荐）
 
 1. 下载 `MemoryAgent-Installer.dmg`
 2. 打开 DMG 文件
 3. 将 `MemoryAgent` 拖入 `Applications` 文件夹
 4. 在启动台或应用程序中打开 `MemoryAgent`
 
-### 方式二：从源码运行
+#### 方式二：从源码运行
+
+```bash
+# 克隆仓库
+git clone https://github.com/jaychouya/MemoryAgent.git
+cd MemoryAgent
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动
+python src/main.py
+```
+
+### Windows
+
+#### 方式一：ZIP 安装包（推荐）
+
+1. 下载 `MemoryAgent-Windows-1.0.0.zip`
+2. 解压到任意目录
+3. 双击 `MemoryAgent.bat` 启动
+4. 或在 PowerShell 中运行 `.\MemoryAgent.ps1`
+
+#### 方式二：从源码运行
+
+```powershell
+# 克隆仓库
+git clone https://github.com/jaychouya/MemoryAgent.git
+cd MemoryAgent
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动
+python src/main.py
+```
+
+### 系统要求
+
+- **macOS**: 10.15 或更高版本
+- **Windows**: 10 或更高版本
+- **Python**: 3.9 或更高版本
+- **网络**: 需要网络连接（用于 API 调用）
 
 ## ✨ 功能特性
 
