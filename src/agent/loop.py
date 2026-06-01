@@ -131,7 +131,7 @@ class AgentLoop:
                     session_id=session_id,
                     top_k=5
                 )
-                state.memories_used = [m.memory.content for m in memories[:3]]
+                state.memories_used = [m.get("content", "") for m in memories[:3] if isinstance(m, dict)]
             except Exception as e:
                 logger.warning(f"Memory retrieval failed: {e}")
         
@@ -320,7 +320,10 @@ class AgentLoop:
         if memories:
             memory_index = "相关记忆：\n"
             for mem in memories:
-                memory_index += f"- {mem.memory.content}\n"
+                if isinstance(mem, dict):
+                    memory_index += f"- {mem.get('content', '')}\n"
+                else:
+                    memory_index += f"- {mem}\n"
         
         return assembler.assemble(
             environment_info=environment_info,
