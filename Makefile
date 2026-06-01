@@ -63,4 +63,14 @@ assets:
 # Package for distribution
 package: build
 	@echo "Packaging complete!"
-	@ls -lh *.dmg *.zip 2>/dev/null || echo "No package files found"
+	@ls -lh *.dmg *.zip *.msi 2>/dev/null || echo "No package files found"
+
+# Build MSI for Windows (requires WiX Toolset)
+build-msi:
+	@echo "Building MSI installer..."
+	python build_msi.py
+
+# Create GitHub Release
+release:
+	@echo "Creating GitHub Release..."
+	./create_release.sh
