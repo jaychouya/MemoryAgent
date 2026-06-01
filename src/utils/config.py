@@ -1,10 +1,16 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, ConfigDict
 from typing import Optional, List
 
 
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
+    
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True
+    )
     
     # App
     APP_NAME: str = "MemoMind"
@@ -53,11 +59,6 @@ class Settings(BaseSettings):
         "financial_transaction",
         "personal_data_export"
     ]
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
 
 
 # Global settings instance
