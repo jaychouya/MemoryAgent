@@ -6,12 +6,17 @@ import logging
 from src.backend.services import get_llm_service, LLMService
 from src.agent.loop import AgentLoop
 from src.agent.tools.registry import get_tool_registry
+from src.agent.tools.builtin import MemorySearchTool, MemoryStoreTool, ContextRetrieveTool
+from src.agent.tools.advanced import SemanticPatchTool, SkillSearchTool, SkillCreateTool, TraceAnalysisTool
 from src.agent.plans import (
     PlanModeManager,
     EnterPlanModeTool,
     ExitPlanModeTool,
     CreatePlanTool
 )
+from src.memory.manager import MemoryManager
+from src.skills.graph import SkillGraph
+from src.agent.reflection.tracer import ExecutionTracer
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -22,6 +27,9 @@ global_model_config: Optional[Dict[str, str]] = None
 
 _agent_loop: Optional[AgentLoop] = None
 _plan_manager: Optional[PlanModeManager] = None
+_memory_manager: Optional[MemoryManager] = None
+_skill_graph: Optional[SkillGraph] = None
+_tracer: Optional[ExecutionTracer] = None
 
 
 class ModelConfigRequest(BaseModel):
@@ -57,9 +65,21 @@ class ChatResponse(BaseModel):
 
 
 def get_agent_loop(llm_service) -> AgentLoop:
-    global _agent_loop, _plan_manager
+    global _agent_loop, _plan_manager, _memory_manager, _skill_graph, _tracer
     if _agent_loop is None:
         registry = get_tool_registry()
+        
+        _memory_manager = MemoryManager(llm_service=llm_service)
+        _skill_graph = SkillGraph()
+        _tracer = ExecutionTracer()
+        
+        registry.register(MemorySearchTool(_memory_manager))
+        registry.register(MemoryStoreTool(_memory_manager))
+        registry.register(ContextRetrieveTool())
+        registry.register(SemanticPatchTool())
+        registry.register(SkillSearchTool(_skill_graph))
+        registry.register(SkillCreateTool(_skill_graph))
+        registry.register(TraceAnalysisTool(_tracer))
         
         _plan_manager = PlanModeManager()
         registry.register(EnterPlanModeTool(_plan_manager))
@@ -69,6 +89,7 @@ def get_agent_loop(llm_service) -> AgentLoop:
         _agent_loop = AgentLoop(
             llm_service=llm_service,
             tool_registry=registry,
+            memory_manager=_memory_manager,
             max_turns=10
         )
     return _agent_loop
