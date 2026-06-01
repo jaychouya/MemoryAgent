@@ -1,8 +1,8 @@
-# CogniAgent
+# MemoryAgent
 
 <div align="center">
 
-🧠 **基于认知记忆架构的智能AI Agent**
+🧠 **具备认知记忆架构的 AI Agent，让 AI 记住你的偏好，越用越懂你**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green.svg)](https://fastapi.tiangolo.com/)
@@ -17,16 +17,14 @@
 
 ## 📖 项目简介
 
-CogniAgent 是一个具备**认知记忆架构**的智能AI Agent，灵感来源于 Claude Code 的设计理念。它不仅能回答问题，还能记住你的偏好、学习你的习惯，越用越懂你。
+MemoryAgent 是一个具备**认知记忆架构**的智能 AI Agent，让 AI 记住你的偏好，越用越懂你。
 
-### 🎯 核心亮点
+### 🎯 核心特性
 
-- **Agent Loop** - 基于 Tool-Use Loop 的智能决策引擎
-- **四类型记忆** - 用户画像、行为反馈、项目动态、外部引用
-- **五步上下文压缩** - 智能管理对话上下文
-- **语义化代码理解** - 基于 AST 的代码匹配
-- **技能知识图谱** - 可查询、可推理、可迁移的技能系统
-- **15+ 大模型支持** - OpenAI、百炼、小米MiMo、智谱等
+- **四类型记忆系统** - 用户画像、行为反馈、项目动态、外部引用
+- **跨会话记忆共享** - 记住你的偏好，下次对话继续使用
+- **基于 Claude Code 的 Agent Loop 架构** - 智能决策循环
+- **支持 15+ 大模型** - OpenAI、百炼、小米MiMo、智谱等
 
 ---
 
