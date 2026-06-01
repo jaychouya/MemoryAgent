@@ -85,8 +85,13 @@ class LLMService:
             response = await self.client.chat.completions.create(**kwargs)
             
             choice = response.choices[0]
+            content = choice.message.content or ""
+            
+            # 后处理：清理 Markdown 格式
+            content = self._clean_markdown(content)
+            
             result = {
-                "content": choice.message.content or "",
+                "content": content,
                 "stop_reason": choice.finish_reason
             }
             
@@ -151,6 +156,50 @@ class LLMService:
                 return f"收到你的消息：「{message}」\n\n⚠️ {error}\n\n请检查你的API配置是否正确：\n1. 点击左上角「配置」按钮\n2. 确认API Key是否有效\n3. 确认选择的厂商和模型是否正确\n\n如需帮助，可以参考厂商文档获取正确的API Key。"
             else:
                 return f"收到你的消息：「{message}」\n\n目前我处于基础模式，回答能力有限。如需更智能的回答，请配置AI模型：\n\n👉 点击左上角「配置」按钮\n👉 选择AI厂商\n👉 填写API Key\n\n配置后我就能真正理解你的问题并给出有用的回答了！"
+    
+    def _clean_markdown(self, text: str) -> str:
+        """清理 Markdown 格式，转换为纯文本。"""
+        import re
+        
+        # 移除代码块标记
+        text = re.sub(r'```[\w]*\n', '', text)
+        text = re.sub(r'```', '', text)
+        
+        # 移除行内代码标记
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        
+        # 移除标题标记
+        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+        
+        # 移除加粗标记
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        
+        # 移除斜体标记
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        
+        # 移除删除线标记
+        text = re.sub(r'~~([^~]+)~~', r'\1', text)
+        
+        # 移除链接标记
+        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+        
+        # 移除图片标记
+        text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+        
+        # 移除引用标记
+        text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
+        
+        # 移除列表标记（保留内容）
+        text = re.sub(r'^[\s]*[-*+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)
+        
+        # 移除水平线
+        text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+        
+        # 清理多余的空行
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        
+        return text.strip()
 
 
 llm_service = None
