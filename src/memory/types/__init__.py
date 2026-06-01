@@ -66,7 +66,13 @@ class MemoryItem:
         """Create a new memory item with auto-generated ID."""
         # Generate ID from content hash
         content_hash = hashlib.md5(content.encode()).hexdigest()[:8]
-        memory_id = f"{memory_type.value}_{content_hash}"
+        
+        # 如果有 user_id，将其包含在 memory_id 中
+        user_id = (metadata or {}).get("user_id")
+        if user_id:
+            memory_id = f"{user_id}_{memory_type.value}_{content_hash}"
+        else:
+            memory_id = f"{memory_type.value}_{content_hash}"
         
         return cls(
             id=memory_id,

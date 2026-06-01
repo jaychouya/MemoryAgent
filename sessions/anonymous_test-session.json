@@ -1,0 +1,9 @@
+{
+  "key": "anonymous:test-session",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, I like coffee"
+    }
+  ]
+}

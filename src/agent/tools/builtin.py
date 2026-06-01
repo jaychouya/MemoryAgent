@@ -125,11 +125,28 @@ class MemoryStoreTool(ReadWriteTool):
             
             mem_type = type_map.get(memory_type, MemoryType.USER)
             
+            # 生成有意义的描述
+            description = self._generate_description(content, memory_type)
+            
+            # 获取用户上下文
+            user_id = kwargs.get("user_id", "anonymous")
+            session_id = kwargs.get("session_id")
+            
+            # 构建元数据
+            metadata = {
+                "user_id": user_id,
+                "importance": importance,
+                "source": "user_conversation"
+            }
+            if session_id:
+                metadata["session_id"] = session_id
+            
             result = await self.memory.store(
                 content=content,
                 memory_type=mem_type,
-                description=content[:50],
-                user_id=kwargs.get("user_id", "anonymous")
+                description=description,
+                metadata=metadata,
+                user_id=user_id
             )
             
             if result:
@@ -150,6 +167,22 @@ class MemoryStoreTool(ReadWriteTool):
                 content=None,
                 error=f"记忆存储失败: {str(e)}"
             )
+    
+    def _generate_description(self, content: str, memory_type: str) -> str:
+        """Generate a meaningful description for the memory."""
+        # 截取前30个字符作为基础
+        base = content[:30] if len(content) > 30 else content
+        
+        # 根据类型添加前缀
+        type_prefixes = {
+            "user": "用户偏好",
+            "feedback": "行为反馈",
+            "project": "项目动态",
+            "reference": "外部引用"
+        }
+        
+        prefix = type_prefixes.get(memory_type, "记忆")
+        return f"{prefix}：{base}"
 
 
 class ContextRetrieveTool(ReadOnlyTool):
