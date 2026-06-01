@@ -28,6 +28,17 @@ MemoryAgent 是一个具备**认知记忆架构**的智能 AI Agent，让 AI 记
 
 ---
 
+## 🚀 快速开始
+
+### 方式一：DMG 安装包（推荐）
+
+1. 下载 `MemoryAgent-Installer.dmg`
+2. 打开 DMG 文件
+3. 将 `MemoryAgent` 拖入 `Applications` 文件夹
+4. 在启动台或应用程序中打开 `MemoryAgent`
+
+### 方式二：从源码运行
+
 ## ✨ 功能特性
 
 ### 🧠 Agent Loop (智能决策循环)
