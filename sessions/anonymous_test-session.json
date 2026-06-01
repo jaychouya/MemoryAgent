@@ -16,6 +16,14 @@
     {
       "role": "user",
       "content": "Hello, I like coffee"
+    },
+    {
+      "role": "user",
+      "content": "Hello, I like coffee"
+    },
+    {
+      "role": "user",
+      "content": "Hello, I like coffee"
     }
   ]
 }

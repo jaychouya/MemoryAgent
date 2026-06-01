@@ -183,15 +183,24 @@ async def chat(request: ChatRequest):
             messages = sessions[session_key]
             truncated = []
             count = 0
-            for i in range(len(messages) - 1, -1, -1):
+            i = len(messages) - 1
+            while i >= 0 and count < 20:
                 msg = messages[i]
-                # 不要在工具调用链中间截断
-                if msg.get("role") == "tool" and count > 0:
-                    continue
-                truncated.insert(0, msg)
-                count += 1
-                if count >= 20:
-                    break
+                # 如果是工具结果，向前找到对应的工具调用
+                if msg.get("role") == "tool":
+                    # 向前找到工具调用
+                    j = i - 1
+                    while j >= 0 and messages[j].get("role") == "tool":
+                        j -= 1
+                    # 添加工具调用和所有相关结果
+                    for k in range(j, i + 1):
+                        truncated.insert(0, messages[k])
+                        count += 1
+                    i = j - 1
+                else:
+                    truncated.insert(0, msg)
+                    count += 1
+                    i -= 1
             sessions[session_key] = truncated
         
         memory_updates = []
