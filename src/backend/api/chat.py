@@ -8,7 +8,7 @@ from pathlib import Path
 
 from src.backend.services import get_llm_service, LLMService
 from src.agent.loop import AgentLoop
-from src.agent.tools.registry import get_tool_registry
+from src.agent.tools.registry import get_tool_registry, ToolRegistry
 from src.agent.tools.builtin import MemorySearchTool, MemoryStoreTool, ContextRetrieveTool
 from src.agent.tools.advanced import SemanticPatchTool, SkillSearchTool, SkillCreateTool, TraceAnalysisTool
 from src.agent.plans import (
