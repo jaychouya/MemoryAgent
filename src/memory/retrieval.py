@@ -45,7 +45,7 @@ class MemoryRetrieval:
         limit: int = 5
     ) -> List[Dict]:
         """
-        Retrieve relevant memories for a query.
+        Retrieve relevant memories using SQLite index.
         
         Args:
             query: User's query
@@ -55,38 +55,38 @@ class MemoryRetrieval:
         Returns:
             List of memory dicts with content and staleness info
         """
-        # Step 1: Get all memories
-        all_memories = await self.storage.search(limit=100)
+        # 使用 SQLite 索引搜索
+        results = self.storage.index.search(
+            query=query,
+            user_id=user_id,
+            limit=limit
+        )
         
-        if not all_memories:
-            return []
-        
-        # Step 2: Select relevant memories using LLM
-        if self.llm and len(all_memories) > limit:
-            selected = await self._select_with_llm(query, all_memories, limit)
-        else:
-            # Simple keyword matching fallback
-            selected = self._select_with_keywords(query, all_memories, limit)
-        
-        # Step 3: Format results with staleness info
-        results = []
-        for memory in selected:
-            result = {
-                "id": memory.id,
-                "type": memory.type.value,
-                "content": memory.content,
-                "description": memory.description,
-                "age_days": memory.age_days(),
-                "is_stale": memory.is_stale(max_days=1),
-                "staleness_warning": None
-            }
-            
-            if result["is_stale"]:
-                result["staleness_warning"] = self.STALENESS_WARNING_TEMPLATE.format(
-                    days=result["age_days"]
-                )
-            
-            results.append(result)
+        # 添加过时警告
+        for result in results:
+            created_at = result.get("created_at")
+            if created_at:
+                try:
+                    created = datetime.fromisoformat(created_at)
+                    age_days = (datetime.now() - created).days
+                    
+                    result["age_days"] = age_days
+                    result["is_stale"] = age_days > 1
+                    
+                    if result["is_stale"]:
+                        result["staleness_warning"] = self.STALENESS_WARNING_TEMPLATE.format(
+                            days=age_days
+                        )
+                    else:
+                        result["staleness_warning"] = None
+                except:
+                    result["age_days"] = 0
+                    result["is_stale"] = False
+                    result["staleness_warning"] = None
+            else:
+                result["age_days"] = 0
+                result["is_stale"] = False
+                result["staleness_warning"] = None
         
         return results
     

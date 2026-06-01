@@ -58,7 +58,7 @@ class MemoryStorage:
     
     async def store(self, memory: MemoryItem) -> bool:
         """
-        Store a memory item.
+        Store a memory item with chunking and scoring.
         
         Args:
             memory: Memory item to store
@@ -67,14 +67,54 @@ class MemoryStorage:
             True if successful
         """
         try:
-            # Write memory file
-            file_path = self._get_file_path(memory)
-            file_path.write_text(memory.to_markdown(), encoding="utf-8")
+            # 1. 计算重要性评分
+            importance = self.scorer.score(memory.content, memory.type.value)
+            memory.metadata["importance"] = importance
             
-            # Update index
+            # 2. 分块（如果内容很长）
+            chunks = self.chunker.chunk(memory.content)
+            
+            if len(chunks) == 1:
+                # 单块：直接存储
+                file_path = self._get_file_path(memory)
+                file_path.write_text(memory.to_markdown(), encoding="utf-8")
+                
+                # 添加到索引
+                self.index.add(
+                    memory_id=memory.id,
+                    content=memory.content,
+                    memory_type=memory.type.value,
+                    user_id=memory.metadata.get("user_id"),
+                    importance=importance
+                )
+            else:
+                # 多块：分块存储
+                for i, chunk in enumerate(chunks):
+                    chunk_id = f"{memory.id}_chunk_{i}"
+                    chunk_memory = MemoryItem(
+                        id=chunk_id,
+                        type=memory.type,
+                        content=chunk,
+                        description=f"{memory.description} (part {i+1})",
+                        metadata={**memory.metadata, "parent_id": memory.id, "chunk_index": i}
+                    )
+                    
+                    file_path = self._get_file_path(chunk_memory)
+                    file_path.write_text(chunk_memory.to_markdown(), encoding="utf-8")
+                    
+                    # 添加到索引
+                    self.index.add(
+                        memory_id=chunk_id,
+                        content=chunk,
+                        memory_type=memory.type.value,
+                        user_id=memory.metadata.get("user_id"),
+                        importance=importance
+                    )
+            
+            # 更新 MEMORY.md 索引
             await self._update_index(memory)
             
-            logger.info(f"Stored memory: {memory.id}")
+            logger.info(f"Stored memory: {memory.id} (importance={importance:.2f})")
             return True
             
         except Exception as e:
