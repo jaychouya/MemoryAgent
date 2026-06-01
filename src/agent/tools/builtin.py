@@ -56,8 +56,11 @@ class MemorySearchTool(ReadOnlyTool):
             # Format results
             content = "找到以下相关记忆：\n\n"
             for i, result in enumerate(results[:top_k], 1):
-                content += f"{i}. {result.memory.content}\n"
-                content += f"   (相关度: {result.score:.2f})\n\n"
+                # result 是 dict，包含 content, score 等字段
+                memory_content = result.get("content", "无内容")
+                score = result.get("score", 0)
+                content += f"{i}. {memory_content}\n"
+                content += f"   (相关度: {score:.2f})\n\n"
             
             return ToolResult(
                 success=True,
