@@ -240,7 +240,7 @@ class AgentLoop:
     
     async def _execute_tools(self, tool_calls: List[Dict]) -> List[Dict]:
         """
-        Execute tool calls.
+        Execute tool calls with error handling.
         
         Args:
             tool_calls: List of tool call requests
@@ -257,7 +257,6 @@ class AgentLoop:
         
         results = []
         
-        # Prepare calls for parallel execution
         calls = []
         for tc in tool_calls:
             func = tc.get("function", {})
@@ -267,15 +266,27 @@ class AgentLoop:
                 "tool_call_id": tc.get("id")
             })
         
-        # Execute (parallel where possible)
-        tool_results = await self.tools.execute_parallel(calls)
+        try:
+            tool_results = await self.tools.execute_parallel(calls)
+        except Exception as e:
+            logger.error(f"Tool execution failed: {e}")
+            return [{
+                "tool_call_id": call["tool_call_id"],
+                "tool_name": call["tool"],
+                "content": f"工具执行失败: {str(e)}"
+            } for call in calls]
         
-        # Format results
         for call, result in zip(calls, tool_results):
+            if result.success:
+                content = result.content
+            else:
+                content = f"工具 '{call['tool']}' 执行失败: {result.error}"
+                logger.warning(f"Tool {call['tool']} failed: {result.error}")
+            
             results.append({
                 "tool_call_id": call["tool_call_id"],
                 "tool_name": call["tool"],
-                "content": result.content if result.success else f"错误: {result.error}"
+                "content": content
             })
         
         return results
