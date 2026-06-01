@@ -178,8 +178,21 @@ async def chat(request: ChatRequest):
         
         save_session(session_key, sessions[session_key])
         
+        # 截断逻辑：保留完整的消息链
         if len(sessions[session_key]) > 20:
-            sessions[session_key] = sessions[session_key][-20:]
+            messages = sessions[session_key]
+            truncated = []
+            count = 0
+            for i in range(len(messages) - 1, -1, -1):
+                msg = messages[i]
+                # 不要在工具调用链中间截断
+                if msg.get("role") == "tool" and count > 0:
+                    continue
+                truncated.insert(0, msg)
+                count += 1
+                if count >= 20:
+                    break
+            sessions[session_key] = truncated
         
         memory_updates = []
         if result.state and result.state.memories_used:
@@ -224,10 +237,9 @@ async def list_sessions(user_id: str = "anonymous"):
             messages = sessions[key]
             last_message = messages[-1] if messages else None
             
+            # 从第一条用户消息中提取会话名称
             name = session_id
-            if isinstance(messages, dict) and "metadata" in messages:
-                name = messages["metadata"].get("name", session_id)
-            elif messages and len(messages) > 0:
+            if messages and isinstance(messages, list):
                 first_user_msg = next((m for m in messages if m.get("role") == "user"), None)
                 if first_user_msg:
                     content = first_user_msg.get("content", "")

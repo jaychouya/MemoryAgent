@@ -1,0 +1,47 @@
+{
+  "key": "user1:quick_test",
+  "messages": [
+    {
+      "role": "user",
+      "content": "\u8bb0\u4f4f\u6211\u559c\u6b22Python"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_f1427bd9eb364938ae5835b2",
+          "type": "function",
+          "function": {
+            "name": "memory_store",
+            "arguments": "{\"content\": \"\u7528\u6237\u559c\u6b22Python\u7f16\u7a0b\", \"memory_type\": \"user\", \"importance\": 0.7}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_f1427bd9eb364938ae5835b2",
+      "content": "\u5df2\u6210\u529f\u5b58\u50a8\u8bb0\u5fc6\u5230 user \u7c7b\u578b\n\n\u5b58\u50a8\u5185\u5bb9: \u7528\u6237\u559c\u6b22Python\u7f16\u7a0b"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_7dc4cc25f25c4785b86b634c",
+          "type": "function",
+          "function": {
+            "name": "memory_search",
+            "arguments": "{\"query\": \"\u559c\u6b22 Python\", \"top_k\": 5}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_7dc4cc25f25c4785b86b634c",
+      "content": "\u627e\u5230\u4ee5\u4e0b\u76f8\u5173\u8bb0\u5fc6\uff1a\n\n1. \u7528\u6237\u559c\u6b22Python\u7f16\u7a0b\n   (\u76f8\u5173\u5ea6: 0.00)\n\n2. \u7528\u6237\u559c\u6b22Python\u7f16\u7a0b\uff0c\u8ba8\u538cJava\uff0c\u56e0\u4e3aPython\u8bed\u6cd5\u7b80\u6d01\u3002\n   (\u76f8\u5173\u5ea6: 0.00)\n\n3. \u7528\u6237\u559c\u6b22Python\u7f16\u7a0b\n   (\u76f8\u5173\u5ea6: 0.00)\n\n"
+    }
+  ]
+}

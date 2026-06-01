@@ -89,6 +89,8 @@ class AgentLoop:
         self.memory = memory_manager
         self.context = context_manager or ContextCompressor(llm_service)
         self.max_turns = max_turns
+        self.user_id = None
+        self.session_id = None
     
     async def run(
         self,
@@ -111,6 +113,10 @@ class AgentLoop:
         Returns:
             AgentResult with final response
         """
+        # 保存用户上下文
+        self.user_id = user_id
+        self.session_id = session_id
+        
         state = AgentState(
             messages=context_messages or []
         )
@@ -268,6 +274,12 @@ class AgentLoop:
                     arguments = json.loads(arguments)
                 except:
                     arguments = {}
+            
+            # 注入用户上下文到工具参数
+            if self.user_id:
+                arguments["user_id"] = self.user_id
+            if self.session_id:
+                arguments["session_id"] = self.session_id
             
             calls.append({
                 "tool": func.get("name"),
