@@ -1,8 +1,8 @@
-# MemoryAI
+# CogniAgent
 
 <div align="center">
 
-🧠 **基于认知记忆架构的智能AI助手**
+🧠 **基于认知记忆架构的智能AI Agent**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green.svg)](https://fastapi.tiangolo.com/)
@@ -17,7 +17,7 @@
 
 ## 📖 项目简介
 
-MemoryAI 是一个具备**认知记忆架构**的智能AI助手，灵感来源于 Claude Code 的设计理念。它不仅能回答问题，还能记住你的偏好、学习你的习惯，越用越懂你。
+CogniAgent 是一个具备**认知记忆架构**的智能AI Agent，灵感来源于 Claude Code 的设计理念。它不仅能回答问题，还能记住你的偏好、学习你的习惯，越用越懂你。
 
 ### 🎯 核心亮点
 
