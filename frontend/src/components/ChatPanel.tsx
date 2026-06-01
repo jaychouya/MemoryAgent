@@ -17,7 +17,11 @@ interface Message {
 
 interface Session {
   session_id: string;
+  name?: string;
   message_count: number;
+  last_message?: string;
+  last_timestamp?: string;
+  created_at?: string;
 }
 
 interface ModelConfig {
@@ -52,6 +56,13 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     } catch (error) {
       console.error("Failed to load sessions:", error);
     }
+  };
+
+  const generateSessionName = (firstMessage: string) => {
+    const msg = firstMessage.substring(0, 20);
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    return `${msg} - ${timeStr}`;
   };
 
   const createNewSession = () => {
@@ -190,8 +201,15 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
                       : "hover:bg-slate-50 text-slate-600"
                   }`}
                 >
-                  <p className="text-[11px] font-medium truncate">{session.session_id}</p>
-                  <p className="text-[10px] text-slate-400">{session.message_count} 条消息</p>
+                  <p className="text-[11px] font-medium truncate">{session.name || session.session_id}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-slate-400">{session.message_count} 条消息</p>
+                    {session.last_timestamp && (
+                      <p className="text-[10px] text-slate-400">
+                        {new Date(session.last_timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
                 </button>
               ))
             )}

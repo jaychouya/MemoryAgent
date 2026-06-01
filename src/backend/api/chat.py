@@ -195,9 +195,10 @@ async def chat(request: ChatRequest):
         )
         
     except Exception as e:
-        logger.error(f"Chat error: {e}")
+        logger.error(f"Chat error: {e}", exc_info=True)
+        error_msg = str(e)
         return ChatResponse(
-            response="抱歉，处理您的消息时出现了问题。请稍后再试。",
+            response=f"处理消息时出现错误: {error_msg}\n\n请检查配置或稍后重试。",
             memory_updates=[],
             decision_explanation=DecisionExplanation(
                 action="error_fallback",
@@ -215,15 +216,43 @@ async def list_sessions(user_id: str = "anonymous"):
             session_id = key.split(":")[1]
             messages = sessions[key]
             last_message = messages[-1] if messages else None
+            
+            name = session_id
+            if isinstance(messages, dict) and "metadata" in messages:
+                name = messages["metadata"].get("name", session_id)
+            elif messages and len(messages) > 0:
+                first_user_msg = next((m for m in messages if m.get("role") == "user"), None)
+                if first_user_msg:
+                    content = first_user_msg.get("content", "")
+                    name = content[:25] + ("..." if len(content) > 25 else "")
+            
             user_sessions.append({
                 "session_id": session_id,
-                "message_count": len(messages),
+                "name": name,
+                "message_count": len(messages) if isinstance(messages, list) else 0,
                 "last_message": last_message.get("content", "")[:50] if last_message else "",
                 "last_timestamp": last_message.get("timestamp", "") if last_message else "",
-                "created_at": messages[0].get("timestamp", "") if messages else ""
+                "created_at": messages[0].get("timestamp", "") if messages and isinstance(messages, list) and len(messages) > 0 else ""
             })
     user_sessions.sort(key=lambda x: x.get("last_timestamp", ""), reverse=True)
     return {"sessions": user_sessions}
+
+
+@router.post("/sessions/rename")
+async def rename_session(request: dict):
+    """Rename a session."""
+    session_id = request.get("session_id")
+    user_id = request.get("user_id", "anonymous")
+    new_name = request.get("name")
+    
+    session_key = f"{user_id}:{session_id}"
+    if session_key in sessions:
+        if "metadata" not in sessions[session_key]:
+            sessions[session_key]["metadata"] = {}
+        sessions[session_key]["metadata"]["name"] = new_name
+        save_session(session_key, sessions[session_key])
+        return {"status": "success"}
+    raise HTTPException(status_code=404, detail="Session not found")
 
 
 @router.delete("/sessions/{session_id}")
