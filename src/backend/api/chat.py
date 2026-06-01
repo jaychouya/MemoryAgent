@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import logging
+import json
+from datetime import datetime
+from pathlib import Path
 
 from src.backend.services import get_llm_service, LLMService
 from src.agent.loop import AgentLoop
@@ -22,6 +25,35 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 sessions: Dict[str, List[Dict[str, str]]] = {}
+
+SESSIONS_DIR = Path("sessions")
+SESSIONS_DIR.mkdir(exist_ok=True)
+
+
+def load_sessions():
+    """Load sessions from disk."""
+    global sessions
+    for session_file in SESSIONS_DIR.glob("*.json"):
+        try:
+            with open(session_file) as f:
+                data = json.load(f)
+                sessions[data["key"]] = data["messages"]
+        except Exception as e:
+            logger.warning(f"Failed to load session {session_file}: {e}")
+
+
+def save_session(session_key: str, messages: List[Dict]):
+    """Save session to disk."""
+    try:
+        filename = session_key.replace(":", "_") + ".json"
+        filepath = SESSIONS_DIR / filename
+        with open(filepath, "w") as f:
+            json.dump({"key": session_key, "messages": messages}, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to save session {session_key}: {e}")
+
+
+load_sessions()
 
 global_model_config: Optional[Dict[str, str]] = None
 
@@ -128,12 +160,16 @@ async def chat(request: ChatRequest):
         
         sessions[session_key].append({
             "role": "user",
-            "content": request.message
+            "content": request.message,
+            "timestamp": datetime.now().isoformat()
         })
         sessions[session_key].append({
             "role": "assistant",
-            "content": result.content
+            "content": result.content,
+            "timestamp": datetime.now().isoformat()
         })
+        
+        save_session(session_key, sessions[session_key])
         
         if len(sessions[session_key]) > 20:
             sessions[session_key] = sessions[session_key][-20:]
@@ -177,10 +213,16 @@ async def list_sessions(user_id: str = "anonymous"):
     for key in sessions.keys():
         if key.startswith(f"{user_id}:"):
             session_id = key.split(":")[1]
+            messages = sessions[key]
+            last_message = messages[-1] if messages else None
             user_sessions.append({
                 "session_id": session_id,
-                "message_count": len(sessions[key])
+                "message_count": len(messages),
+                "last_message": last_message.get("content", "")[:50] if last_message else "",
+                "last_timestamp": last_message.get("timestamp", "") if last_message else "",
+                "created_at": messages[0].get("timestamp", "") if messages else ""
             })
+    user_sessions.sort(key=lambda x: x.get("last_timestamp", ""), reverse=True)
     return {"sessions": user_sessions}
 
 
