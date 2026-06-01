@@ -62,8 +62,8 @@ class SkillGenerator:
             prerequisites=prerequisites,
             dependencies=[],
             tags=["auto-generated", pattern.sequence[0]],
-            success_count=int(pattern.frequency * pattern.success_rate),
-            failure_count=int(pattern.frequency * (1 - pattern.success_rate))
+            success_count=round(pattern.frequency * pattern.success_rate),
+            failure_count=round(pattern.frequency * (1 - pattern.success_rate))
         )
     
     def _generate_content(
