@@ -85,10 +85,18 @@ class MemoryItem:
             f"type: {self.type.value}",
             f"created: {self.created_at.isoformat()}",
             f"updated: {self.updated_at.isoformat()}",
-            "---",
-            "",
-            self.content
         ]
+        
+        # 保存 metadata
+        if self.metadata:
+            lines.append("metadata:")
+            for key, value in self.metadata.items():
+                lines.append(f"  {key}: {value}")
+        
+        lines.append("---")
+        lines.append("")
+        lines.append(self.content)
+        
         return "\n".join(lines)
     
     @classmethod
@@ -100,6 +108,7 @@ class MemoryItem:
         metadata = {}
         content_start = 0
         in_frontmatter = False
+        in_metadata = False
         
         for i, line in enumerate(lines):
             if line.strip() == "---":
@@ -109,18 +118,44 @@ class MemoryItem:
                 in_frontmatter = True
                 continue
             
-            if in_frontmatter and ":" in line:
-                key, value = line.split(":", 1)
-                metadata[key.strip()] = value.strip()
+            if in_frontmatter:
+                if line.strip() == "metadata:":
+                    in_metadata = True
+                    continue
+                
+                if in_metadata and line.startswith("  "):
+                    # 解析 metadata 的 key: value
+                    key_value = line.strip()
+                    if ":" in key_value:
+                        key, value = key_value.split(":", 1)
+                        metadata[key.strip()] = value.strip()
+                elif ":" in line and not line.startswith("  "):
+                    in_metadata = False
+                    key, value = line.split(":", 1)
+                    metadata[key.strip()] = value.strip()
         
         # Get content
         content = "\n".join(lines[content_start:]).strip()
+        
+        # 解析 metadata 中的嵌套字段
+        user_metadata = {}
+        for key, value in metadata.items():
+            if key not in ["name", "description", "type", "created", "updated"]:
+                # 尝试转换数字类型
+                try:
+                    if "." in value:
+                        user_metadata[key] = float(value)
+                    else:
+                        user_metadata[key] = int(value)
+                except ValueError:
+                    user_metadata[key] = value
         
         return cls(
             id=memory_id or metadata.get("name", "unknown"),
             type=MemoryType(metadata.get("type", "user")),
             content=content,
             description=metadata.get("description", ""),
+            metadata=user_metadata,
             created_at=datetime.fromisoformat(metadata.get("created", datetime.now().isoformat())),
             updated_at=datetime.fromisoformat(metadata.get("updated", datetime.now().isoformat()))
         )
