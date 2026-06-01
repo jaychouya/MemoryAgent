@@ -159,16 +159,22 @@ async def chat(request: ChatRequest):
             user_id=request.user_id
         )
         
-        sessions[session_key].append({
-            "role": "user",
-            "content": request.message,
-            "timestamp": datetime.now().isoformat()
-        })
-        sessions[session_key].append({
-            "role": "assistant",
-            "content": result.content,
-            "timestamp": datetime.now().isoformat()
-        })
+        # 保存完整的消息历史，包括工具调用
+        if result.state and result.state.messages:
+            # 更新会话消息为完整的历史
+            sessions[session_key] = result.state.messages
+        else:
+            # 降级方案：只保存 user 和 assistant 消息
+            sessions[session_key].append({
+                "role": "user",
+                "content": request.message,
+                "timestamp": datetime.now().isoformat()
+            })
+            sessions[session_key].append({
+                "role": "assistant",
+                "content": result.content,
+                "timestamp": datetime.now().isoformat()
+            })
         
         save_session(session_key, sessions[session_key])
         
