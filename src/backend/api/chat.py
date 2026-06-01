@@ -97,30 +97,31 @@ class ChatResponse(BaseModel):
 
 
 def get_agent_loop(llm_service) -> AgentLoop:
-    global _agent_loop, _plan_manager, _memory_manager, _skill_graph, _tracer
+    global _agent_loop, _plan_manager, _memory_manager, _skill_graph, _tracer, _tool_registry
     if _agent_loop is None:
-        registry = get_tool_registry()
+        # 重置工具注册表，避免重复注册
+        _tool_registry = ToolRegistry()
         
         _memory_manager = MemoryManager(llm_service=llm_service)
         _skill_graph = SkillGraph()
         _tracer = ExecutionTracer()
         
-        registry.register(MemorySearchTool(_memory_manager))
-        registry.register(MemoryStoreTool(_memory_manager))
-        registry.register(ContextRetrieveTool())
-        registry.register(SemanticPatchTool())
-        registry.register(SkillSearchTool(_skill_graph))
-        registry.register(SkillCreateTool(_skill_graph))
-        registry.register(TraceAnalysisTool(_tracer))
+        _tool_registry.register(MemorySearchTool(_memory_manager))
+        _tool_registry.register(MemoryStoreTool(_memory_manager))
+        _tool_registry.register(ContextRetrieveTool())
+        _tool_registry.register(SemanticPatchTool())
+        _tool_registry.register(SkillSearchTool(_skill_graph))
+        _tool_registry.register(SkillCreateTool(_skill_graph))
+        _tool_registry.register(TraceAnalysisTool(_tracer))
         
         _plan_manager = PlanModeManager()
-        registry.register(EnterPlanModeTool(_plan_manager))
-        registry.register(ExitPlanModeTool(_plan_manager))
-        registry.register(CreatePlanTool(_plan_manager))
+        _tool_registry.register(EnterPlanModeTool(_plan_manager))
+        _tool_registry.register(ExitPlanModeTool(_plan_manager))
+        _tool_registry.register(CreatePlanTool(_plan_manager))
         
         _agent_loop = AgentLoop(
             llm_service=llm_service,
-            tool_registry=registry,
+            tool_registry=_tool_registry,
             memory_manager=_memory_manager,
             max_turns=10
         )
