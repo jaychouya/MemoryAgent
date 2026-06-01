@@ -196,12 +196,13 @@ async def delete_session(session_id: str, user_id: str = "anonymous"):
 @router.post("/config")
 async def save_config(config: ModelConfigRequest):
     try:
-        global global_model_config
+        global global_model_config, _agent_loop
         global_model_config = {
             "api_key": config.api_key,
             "base_url": config.base_url,
             "model": config.model
         }
+        _agent_loop = None
         return {"status": "success", "message": "配置已保存"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
