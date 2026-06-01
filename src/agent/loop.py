@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import asyncio
 from datetime import datetime
+import json
 
 from src.agent.prompts.assembler import get_prompt_assembler
 from src.agent.context import ContextCompressor
@@ -260,9 +261,17 @@ class AgentLoop:
         calls = []
         for tc in tool_calls:
             func = tc.get("function", {})
+            arguments = func.get("arguments", {})
+            
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except:
+                    arguments = {}
+            
             calls.append({
                 "tool": func.get("name"),
-                "params": func.get("arguments", {}),
+                "params": arguments,
                 "tool_call_id": tc.get("id")
             })
         
