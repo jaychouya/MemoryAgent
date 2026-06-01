@@ -111,16 +111,35 @@ class MemoryStoreTool(ReadWriteTool):
     ) -> ToolResult:
         """Store memory."""
         try:
-            user_id = kwargs.get("user_id", "anonymous")
+            from src.memory.types import MemoryType
             
-            # Store based on type
-            # This is simplified - Phase 3 will implement full storage
-            success = True
+            type_map = {
+                "user": MemoryType.USER,
+                "feedback": MemoryType.FEEDBACK,
+                "project": MemoryType.PROJECT,
+                "reference": MemoryType.REFERENCE
+            }
             
-            return ToolResult(
-                success=success,
-                content=f"已存储记忆: {content[:50]}..."
+            mem_type = type_map.get(memory_type, MemoryType.USER)
+            
+            result = await self.memory.store(
+                content=content,
+                memory_type=mem_type,
+                description=content[:50],
+                user_id=kwargs.get("user_id", "anonymous")
             )
+            
+            if result:
+                return ToolResult(
+                    success=True,
+                    content=f"已成功存储记忆到 {memory_type} 类型\n\n存储内容: {content[:100]}"
+                )
+            else:
+                return ToolResult(
+                    success=False,
+                    content=None,
+                    error="记忆存储失败"
+                )
             
         except Exception as e:
             return ToolResult(
