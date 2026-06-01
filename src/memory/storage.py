@@ -97,6 +97,7 @@ class MemoryStorage:
         self,
         query: str = None,
         memory_type: MemoryType = None,
+        user_id: str = None,
         limit: int = 10
     ) -> List[MemoryItem]:
         """
@@ -105,6 +106,7 @@ class MemoryStorage:
         Args:
             query: Search query (matches description)
             memory_type: Filter by type
+            user_id: Filter by user ID (for cross-session memory)
             limit: Maximum results
             
         Returns:
@@ -123,6 +125,10 @@ class MemoryStorage:
                 try:
                     content = file_path.read_text(encoding="utf-8")
                     memory = MemoryItem.from_markdown(content, file_path.stem)
+                    
+                    # user_id 过滤：检查文件名是否以 user_id 开头
+                    if user_id and not file_path.stem.startswith(user_id):
+                        continue
                     
                     # Simple text matching
                     if query:
