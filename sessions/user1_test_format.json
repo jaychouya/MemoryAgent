@@ -1,0 +1,9 @@
+{
+  "key": "user1:test_format",
+  "messages": [
+    {
+      "role": "user",
+      "content": "\u5e2e\u6211\u5199\u4e00\u4e2a\u6392\u5e8f\u51fd\u6570"
+    }
+  ]
+}

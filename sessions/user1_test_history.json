@@ -1,0 +1,9 @@
+{
+  "key": "user1:test_history",
+  "messages": [
+    {
+      "role": "user",
+      "content": "\u8bb0\u4f4f\u6211\u559c\u6b22Python"
+    }
+  ]
+}
