@@ -14,6 +14,9 @@ from pathlib import Path
 from datetime import datetime
 
 from src.memory.types import MemoryItem, MemoryType
+from src.memory.chunker import MemoryChunker
+from src.memory.scorer import MemoryScorer
+from src.memory.index import MemoryIndex
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,7 @@ class MemoryStorage:
     Storage structure:
     memories/
     ├── MEMORY.md          # Index file (max 200 lines)
+    ├── index.db           # SQLite index
     ├── user/
     │   └── user_preferences.md
     ├── feedback/
@@ -41,6 +45,11 @@ class MemoryStorage:
     def __init__(self, base_dir: str = "memories"):
         self.base_dir = Path(base_dir)
         self._ensure_dirs()
+        
+        # 初始化组件
+        self.chunker = MemoryChunker(max_tokens=3000)
+        self.scorer = MemoryScorer()
+        self.index = MemoryIndex(str(self.base_dir / "index.db"))
     
     def _ensure_dirs(self):
         """Ensure memory directories exist."""

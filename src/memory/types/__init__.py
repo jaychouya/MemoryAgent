@@ -83,7 +83,7 @@ class MemoryItem:
         )
     
     def to_markdown(self) -> str:
-        """Convert memory to markdown format for storage."""
+        """Convert memory to markdown format for storage (Obsidian compatible)."""
         lines = [
             "---",
             f"name: {self.id}",
@@ -93,14 +93,32 @@ class MemoryItem:
             f"updated: {self.updated_at.isoformat()}",
         ]
         
-        # 保存 metadata
-        if self.metadata:
-            lines.append("metadata:")
-            for key, value in self.metadata.items():
-                lines.append(f"  {key}: {value}")
+        # 添加 tags（Obsidian YAML 列表格式）
+        if self.metadata.get("tags"):
+            lines.append("tags:")
+            for tag in self.metadata["tags"]:
+                lines.append(f"  - {tag}")
+        
+        # 添加 aliases（Obsidian YAML 列表格式）
+        if self.metadata.get("aliases"):
+            lines.append("aliases:")
+            for alias in self.metadata["aliases"]:
+                lines.append(f"  - {alias}")
+        
+        # 保存其他 metadata
+        for key, value in self.metadata.items():
+            if key not in ["tags", "aliases"]:
+                lines.append(f"{key}: {value}")
         
         lines.append("---")
         lines.append("")
+        
+        # 添加 hashtags（Obsidian 格式）
+        if self.metadata.get("tags"):
+            for tag in self.metadata["tags"]:
+                lines.append(f"#{tag}")
+            lines.append("")
+        
         lines.append(self.content)
         
         return "\n".join(lines)
