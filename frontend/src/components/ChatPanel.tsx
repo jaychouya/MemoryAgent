@@ -73,10 +73,29 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     loadSessions();
   };
 
-  const switchSession = (sessionId: string) => {
+  const switchSession = async (sessionId: string) => {
     setCurrentSessionId(sessionId);
-    setMessages([]);
     setShowSessions(false);
+    
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/messages?user_id=demo-user`);
+      const data = await response.json();
+      
+      if (data.messages && data.messages.length > 0) {
+        const loadedMessages: Message[] = data.messages.map((m: any, index: number) => ({
+          id: `loaded-${index}`,
+          content: m.content,
+          role: m.role as "user" | "assistant",
+          timestamp: new Date(m.timestamp || Date.now()),
+        }));
+        setMessages(loadedMessages);
+      } else {
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error("Failed to load session messages:", error);
+      setMessages([]);
+    }
   };
 
   const sendMessage = async () => {

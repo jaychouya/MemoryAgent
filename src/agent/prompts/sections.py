@@ -126,6 +126,7 @@ OUTPUT_STYLE = PromptSection(
 - 使用 **加粗** 强调重点
 - 使用 > 引用块提供补充说明
 - 避免使用省略号(...)，使用完整的句子
+- 禁止使用 Markdown 表格格式（|---|---|），改用列表形式
 
 ### 回答结构
 1. **直接回答**：先给出核心答案
@@ -138,6 +139,7 @@ OUTPUT_STYLE = PromptSection(
 - 不使用 `...` 省略号，使用完整句子
 - 不使用过于简短的回复
 - 不使用模糊的表达如"等等"、"之类"
+- 禁止使用 Markdown 表格（| | | 格式），改用列表或分段描述
 - 使用具体、明确的表达""",
     section_type=SectionType.STATIC,
     cache_priority=40

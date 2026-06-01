@@ -238,6 +238,17 @@ async def list_sessions(user_id: str = "anonymous"):
     return {"sessions": user_sessions}
 
 
+@router.get("/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str, user_id: str = "anonymous"):
+    """Get messages for a specific session."""
+    session_key = f"{user_id}:{session_id}"
+    if session_key in sessions:
+        messages = sessions[session_key]
+        if isinstance(messages, list):
+            return {"messages": messages}
+    return {"messages": []}
+
+
 @router.post("/sessions/rename")
 async def rename_session(request: dict):
     """Rename a session."""
