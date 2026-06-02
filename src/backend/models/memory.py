@@ -86,6 +86,12 @@ class MemorySearchResult(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     retrieval_method: str = "semantic"  # semantic, keyword, graph
     
+    def __init__(self, **data):
+        # 如果 memory 是 dict，转换为 MemoryBase
+        if isinstance(data.get('memory'), dict):
+            data['memory'] = MemoryBase(**data['memory'])
+        super().__init__(**data)
+    
     def to_dict(self) -> dict:
         return {
             "memory": self.memory.to_dict(),

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import logging
@@ -20,6 +20,7 @@ from src.agent.plans import (
 from src.memory.manager import MemoryManager
 from src.skills.graph import SkillGraph
 from src.agent.reflection.tracer import ExecutionTracer
+from src.backend.chat_utils import ChatExporter, FileUploader
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -316,3 +317,83 @@ async def save_config(config: ModelConfigRequest):
         return {"status": "success", "message": "配置已保存"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sessions/{session_id}/export")
+async def export_session(
+    session_id: str,
+    user_id: str = "anonymous",
+    format: str = "json"
+):
+    """Export chat history in various formats."""
+    session_key = f"{user_id}:{session_id}"
+    
+    if session_key not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    messages = sessions[session_key]
+    
+    if format == "json":
+        content = ChatExporter.to_json(messages)
+        media_type = "application/json"
+        filename = f"{session_id}.json"
+    elif format == "markdown" or format == "md":
+        content = ChatExporter.to_markdown(messages)
+        media_type = "text/markdown"
+        filename = f"{session_id}.md"
+    elif format == "text" or format == "txt":
+        content = ChatExporter.to_text(messages)
+        media_type = "text/plain"
+        filename = f"{session_id}.txt"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+    
+    return {
+        "content": content,
+        "filename": filename,
+        "format": format,
+        "message_count": len(messages)
+    }
+
+
+@router.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    user_id: str = "anonymous"
+):
+    """Upload a file for context."""
+    try:
+        content = await file.read()
+        result = await FileUploader.save_upload(
+            filename=file.filename,
+            content=content,
+            user_id=user_id
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/uploads/{user_id}")
+async def list_uploads(user_id: str):
+    """List user's uploaded files."""
+    files = FileUploader.get_user_files(user_id)
+    return {"files": files, "count": len(files)}
+
+
+@router.get("/uploads/{user_id}/{filename}")
+async def get_upload_content(user_id: str, filename: str):
+    """Get uploaded file content."""
+    file_path = Path("uploads") / user_id / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    content = FileUploader.read_file(str(file_path))
+    if content is None:
+        raise HTTPException(status_code=500, detail="Failed to read file")
+    
+    return {
+        "filename": filename,
+        "content": content,
+        "size": len(content)
+    }
