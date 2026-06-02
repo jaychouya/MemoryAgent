@@ -105,7 +105,7 @@ class PromptAssembler:
 
 {memory_index}
 
-请根据用户的问题，检索和使用相关记忆。"""
+请根据用户的问题，检索和使用相关记忆。如果没有找到相关记忆，请直接回答用户的问题，不要创建计划。"""
     
     def invalidate_cache(self):
         """Invalidate static cache (e.g., after config change)."""

@@ -50,7 +50,7 @@ class MemorySearchTool(ReadOnlyTool):
             if not results:
                 return ToolResult(
                     success=True,
-                    content="未找到相关记忆。"
+                    content="暂无相关记忆。这是新对话，请直接回答用户的问题。"
                 )
             
             # Format results
