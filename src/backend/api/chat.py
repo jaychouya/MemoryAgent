@@ -21,6 +21,7 @@ from src.memory.manager import MemoryManager
 from src.skills.graph import SkillGraph
 from src.agent.reflection.tracer import ExecutionTracer
 from src.backend.chat_utils import ChatExporter, FileUploader
+from src.backend.config_manager import ConfigManager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -397,3 +398,51 @@ async def get_upload_content(user_id: str, filename: str):
         "content": content,
         "size": len(content)
     }
+
+
+# 初始化配置管理器
+config_manager = ConfigManager()
+
+
+@router.get("/config/presets")
+async def get_config_presets():
+    """Get available preset configurations."""
+    return config_manager.get_presets()
+
+
+@router.get("/config/guide/{provider}")
+async def get_setup_guide(provider: str):
+    """Get setup guide for a provider."""
+    return config_manager.get_setup_guide(provider)
+
+
+@router.post("/config/quick-setup")
+async def quick_setup(request: dict):
+    """Quick setup with preset provider."""
+    provider = request.get("provider")
+    api_key = request.get("api_key")
+    model = request.get("model")
+    
+    if not provider or not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="provider and api_key are required"
+        )
+    
+    result = config_manager.quick_setup(provider, api_key, model)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    # 同时更新全局配置
+    global global_model_config, _agent_loop
+    config = config_manager.load_config()
+    if config:
+        global_model_config = {
+            "api_key": config["api_key"],
+            "base_url": config["base_url"],
+            "model": config["model"]
+        }
+        _agent_loop = None
+    
+    return result
