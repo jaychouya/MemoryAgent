@@ -185,7 +185,8 @@ class MemoryTree:
     
     def get_stats(self) -> Dict[str, Any]:
         """Get memory tree statistics."""
-        storage_stats = self.storage.get_stats()
+        import asyncio
+        storage_stats = asyncio.run(self.storage.get_stats())
         worker_stats = self.worker.get_stats()
         
         return {
