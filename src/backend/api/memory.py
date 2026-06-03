@@ -119,14 +119,83 @@ async def get_memory_stats():
     )
 
 
+@router.get("/memory/export")
+async def export_memories_for_sidecar(
+    user_id: str = Query(..., description="User identifier"),
+    query: Optional[str] = Query(None, description="Optional recall query"),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """Export memories for IDE sidecar / MCP clients."""
+    from src.memory.manager import MemoryManager
+
+    manager = MemoryManager()
+    if query:
+        items = await manager.retrieve(query=query, user_id=user_id, top_k=limit)
+    else:
+        items = await manager.storage.index.search(query="", user_id=user_id, limit=limit)
+
+    return {
+        "user_id": user_id,
+        "count": len(items),
+        "memories": items,
+        "format": "memoryagent-sidecar-v1",
+    }
+
+
+@router.post("/memory/recall")
+async def recall_memories_sidecar(body: dict):
+    """MCP-friendly recall endpoint for external agents."""
+    from src.memory.manager import MemoryManager
+
+    user_id = body.get("user_id", "anonymous")
+    query = body.get("query", "")
+    limit = int(body.get("limit", 5))
+    manager = MemoryManager()
+    items = await manager.retrieve(query=query, user_id=user_id, top_k=limit)
+    prompt_block = await manager.format_for_prompt(query, user_id)
+    return {
+        "memories": items,
+        "prompt_block": prompt_block,
+    }
+
+
+@router.get("/memory/metrics")
+async def get_memory_metrics(user_id: str = Query(default="eval_user")):
+    from src.memory.eval import get_last_report
+    from src.memory.manager import MemoryManager
+
+    manager = MemoryManager()
+    stats = await manager.get_stats()
+    report = get_last_report()
+    payload = {
+        "storage_stats": stats,
+        "vector_count": manager.vector_store.size(),
+        "last_eval": None,
+    }
+    if report:
+        payload["last_eval"] = report.to_dict()
+    return payload
+
+
+@router.post("/memory/metrics/run-eval")
+async def run_memory_eval():
+    from src.memory.eval import run_recall_eval, GOLDEN_PATH
+    from src.memory.manager import MemoryManager
+
+    manager = MemoryManager()
+    try:
+        report = await run_recall_eval(manager, fixture_path=GOLDEN_PATH)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Golden fixture not found")
+    return report.to_dict()
+
+
 @router.delete("/memories/{memory_id}")
 async def delete_memory(memory_id: str):
-    """Delete a specific memory."""
-    for memory_type in ["user", "feedback", "project", "reference"]:
-        memory_file = MEMORIES_DIR / memory_type / f"{memory_id}.md"
-        if memory_file.exists():
-            memory_file.unlink()
-            logger.info(f"Deleted memory {memory_id}")
-            return {"status": "deleted", "memory_id": memory_id}
-    
+    from src.memory.manager import MemoryManager
+
+    manager = MemoryManager()
+    if await manager.delete_memory(memory_id):
+        logger.info(f"Deleted memory {memory_id}")
+        return {"status": "deleted", "memory_id": memory_id}
     raise HTTPException(status_code=404, detail="Memory not found")

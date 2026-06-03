@@ -117,8 +117,8 @@ def should_exclude(content: str, memory_type: str = None) -> bool:
             if pattern in content_lower:
                 return True
     
-    # Check if content is too short (likely not meaningful)
-    if len(content.strip()) < 10:
+    stripped = content.strip()
+    if len(stripped) < 6:
         return True
     
     # Check if content is too long (likely raw output)

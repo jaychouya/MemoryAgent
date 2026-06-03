@@ -1,5 +1,7 @@
 # Agent Memory System Design Spec
 
+> **Runtime note (2026-06):** Production uses Markdown + SQLite + in-memory hybrid vectors. The Redis/PostgreSQL/Chroma four-layer stack is deferred; see [architecture-decision.md](../../architecture-decision.md).
+
 ## 1. 项目概述
 
 ### 1.1 项目名称

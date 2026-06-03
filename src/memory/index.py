@@ -153,7 +153,23 @@ class MemoryIndex:
             params.append(limit)
             
             cursor = conn.execute(sql, params)
-            results = [dict(row) for row in cursor.fetchall()]
+            results = []
+            for row in cursor.fetchall():
+                item = dict(row)
+                content = item.get("content", "")
+                if query and content:
+                    q = query.lower()
+                    c = content.lower()
+                    if q in c:
+                        item["score"] = 1.0
+                    elif any(w in c for w in q.split() if len(w) > 1):
+                        item["score"] = 0.6
+                    else:
+                        item["score"] = 0.3
+                else:
+                    item["score"] = item.get("importance", 0.5)
+                item["id"] = item.get("memory_id", "")
+                results.append(item)
             
             return results
     

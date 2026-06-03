@@ -1,194 +1,180 @@
 """
 Memory retrieval system for MemoryAI Agent.
-
-Implements Claude Code's memory recall pattern:
-- Scan memory file headers (first 30 lines)
-- Use LLM to select relevant memories
-- Staleness detection for old memories
 """
 
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime
 
-from src.memory.types import MemoryItem, MemoryType, MEMORY_TYPE_DESCRIPTIONS
+from src.memory.types import MemoryType, MEMORY_TYPE_DESCRIPTIONS
 from src.memory.storage import MemoryStorage
+from src.memory.vector_store import VectorStore, HybridRetriever
+from src.memory.embeddings import local_embed
 
 logger = logging.getLogger(__name__)
 
 
 class MemoryRetrieval:
-    """
-    Memory retrieval system.
-    
-    Key features from Claude Code:
-    1. Scan headers only (fast)
-    2. LLM-based selection (accurate)
-    3. Staleness detection (reliable)
-    """
-    
+    """Hybrid keyword + vector retrieval with staleness warnings."""
+
     STALENESS_WARNING_TEMPLATE = (
         "这条记忆已经有 {days} 天了。"
         "记忆是某个时间点的观察，不是实时状态——"
         "其中关于代码行为或 file:line 引用的断言可能已经过时。"
         "在当作事实引用之前，请先对照当前代码验证。"
     )
-    
-    def __init__(self, storage: MemoryStorage, llm_service=None):
+
+    def __init__(
+        self,
+        storage: MemoryStorage,
+        llm_service=None,
+        vector_store: Optional[VectorStore] = None
+    ):
         self.storage = storage
         self.llm = llm_service
-    
+        self.vector_store = vector_store or VectorStore()
+        self.hybrid = HybridRetriever(self.vector_store)
+
+    def index_memory_vector(
+        self,
+        memory_id: str,
+        content: str,
+        user_id: str = None,
+        memory_type: str = "user"
+    ):
+        """Add or refresh vector index entry for a memory."""
+        try:
+            embedding = local_embed(content)
+            self.vector_store.add(
+                text=content,
+                embedding=embedding,
+                metadata={
+                    "user_id": user_id,
+                    "memory_type": memory_type,
+                },
+                id=memory_id,
+            )
+        except Exception as e:
+            logger.warning(f"Vector index failed for {memory_id}: {e}")
+
     async def retrieve(
         self,
         query: str,
         user_id: str = None,
         limit: int = 5
     ) -> List[Dict]:
-        """
-        Retrieve relevant memories using SQLite index.
-        
-        Args:
-            query: User's query
-            user_id: User identifier
-            limit: Maximum memories to return
-            
-        Returns:
-            List of memory dicts with content and staleness info
-        """
-        # 使用 SQLite 索引搜索
-        results = self.storage.index.search(
-            query=query,
+        keyword_results = self.storage.index.search(
+            query=query or "",
             user_id=user_id,
-            limit=limit
+            limit=limit * 2
         )
-        
-        # 添加过时警告
+
+        if user_id:
+            keyword_results = [
+                r for r in keyword_results
+                if r.get("user_id") == user_id
+                or (r.get("memory_id") or "").startswith(f"{user_id}_")
+            ]
+
+        if not keyword_results and user_id:
+            keyword_results = self.storage.index.search(
+                query="",
+                user_id=user_id,
+                limit=limit * 2
+            )
+            keyword_results = [
+                r for r in keyword_results
+                if r.get("user_id") == user_id
+                or (r.get("memory_id") or "").startswith(f"{user_id}_")
+            ]
+
+        selection_reason = "fallback_all_user"
+        if query and keyword_results:
+            try:
+                query_embedding = local_embed(query)
+                merged = await self.hybrid.retrieve(
+                    query=query,
+                    query_embedding=query_embedding,
+                    keyword_results=keyword_results,
+                    top_k=limit
+                )
+                results = self._normalize_hybrid_results(merged, limit)
+                selection_reason = "keyword+vector"
+            except Exception as e:
+                logger.warning(f"Hybrid retrieval failed, using keyword only: {e}")
+                results = keyword_results[:limit]
+                selection_reason = "keyword_only"
+        else:
+            results = keyword_results[:limit]
+            selection_reason = "fallback_all_user" if not query else "keyword_only"
+
+        if user_id:
+            results = [
+                r for r in results
+                if r.get("user_id") == user_id
+                or (r.get("memory_id") or r.get("id") or "").startswith(f"{user_id}_")
+            ]
+
         for result in results:
-            created_at = result.get("created_at")
-            if created_at:
-                try:
-                    created = datetime.fromisoformat(created_at)
-                    age_days = (datetime.now() - created).days
-                    
-                    result["age_days"] = age_days
-                    result["is_stale"] = age_days > 1
-                    
-                    if result["is_stale"]:
-                        result["staleness_warning"] = self.STALENESS_WARNING_TEMPLATE.format(
-                            days=age_days
-                        )
-                    else:
-                        result["staleness_warning"] = None
-                except:
-                    result["age_days"] = 0
-                    result["is_stale"] = False
+            self._apply_staleness(result)
+            result["selection_reason"] = selection_reason
+
+        return results[:limit]
+
+    def _normalize_hybrid_results(self, merged: List[Dict], limit: int) -> List[Dict]:
+        normalized = []
+        for item in merged[:limit]:
+            doc_id = item.get("id") or item.get("memory_id", "")
+            text = item.get("text") or item.get("content", "")
+            normalized.append({
+                "memory_id": doc_id,
+                "id": doc_id,
+                "content": text,
+                "memory_type": item.get("metadata", {}).get("memory_type")
+                or item.get("memory_type", "user"),
+                "user_id": item.get("metadata", {}).get("user_id")
+                or item.get("user_id"),
+                "score": item.get("score", 0.0),
+                "description": text[:80] if text else "",
+            })
+        return normalized
+
+    def _apply_staleness(self, result: Dict):
+        created_at = result.get("created_at")
+        if created_at:
+            try:
+                created = datetime.fromisoformat(created_at)
+                age_days = (datetime.now() - created).days
+                result["age_days"] = age_days
+                result["is_stale"] = age_days > 1
+                if result["is_stale"]:
+                    result["staleness_warning"] = self.STALENESS_WARNING_TEMPLATE.format(
+                        days=age_days
+                    )
+                else:
                     result["staleness_warning"] = None
-            else:
-                result["age_days"] = 0
-                result["is_stale"] = False
-                result["staleness_warning"] = None
-        
-        return results
-    
-    async def _select_with_llm(
-        self,
-        query: str,
-        memories: List[MemoryItem],
-        limit: int
-    ) -> List[MemoryItem]:
-        """
-        Use LLM to select relevant memories.
-        
-        Similar to Claude Code's Sonnet-based selection.
-        """
-        # Build manifest
-        manifest_lines = []
-        for mem in memories:
-            manifest_lines.append(
-                f"- [{mem.type.value}] {mem.id} ({mem.age_days()}d): {mem.description}"
-            )
-        
-        manifest = "\n".join(manifest_lines)
-        
-        prompt = f"""你是一个记忆选择器。从以下记忆列表中，选择最多 {limit} 条与用户问题最相关的记忆。
+                return
+            except Exception:
+                pass
+        result["age_days"] = 0
+        result["is_stale"] = False
+        result["staleness_warning"] = None
 
-用户问题: {query}
-
-可用的记忆:
-{manifest}
-
-请只返回选中的记忆ID列表，用逗号分隔。如果没有相关记忆，返回空。"""
-        
-        try:
-            response = await self.llm.generate_response(
-                message=prompt,
-                system_prompt="你是一个记忆选择器。只返回记忆ID列表。"
-            )
-            
-            # Parse response
-            content = response.get("content", "")
-            selected_ids = [id.strip() for id in content.split(",") if id.strip()]
-            
-            # Map to memory items
-            selected = []
-            for mem in memories:
-                if mem.id in selected_ids:
-                    selected.append(mem)
-                    if len(selected) >= limit:
-                        break
-            
-            return selected or memories[:limit]
-            
-        except Exception as e:
-            logger.warning(f"LLM selection failed, using fallback: {e}")
-            return self._select_with_keywords(query, memories, limit)
-    
-    def _select_with_keywords(
-        self,
-        query: str,
-        memories: List[MemoryItem],
-        limit: int
-    ) -> List[MemoryItem]:
-        """Simple keyword-based selection fallback."""
-        query_lower = query.lower()
-        scored = []
-        
-        for mem in memories:
-            score = 0
-            
-            # Check description match
-            if query_lower in mem.description.lower():
-                score += 2
-            
-            # Check content match
-            if query_lower in mem.content.lower():
-                score += 1
-            
-            # Boost recent memories
-            if not mem.is_stale():
-                score += 0.5
-            
-            if score > 0:
-                scored.append((score, mem))
-        
-        # Sort by score
-        scored.sort(key=lambda x: x[0], reverse=True)
-        
-        return [mem for _, mem in scored[:limit]]
-    
     async def format_for_prompt(self, memories: List[Dict]) -> str:
-        """Format memories for system prompt injection."""
         if not memories:
             return ""
-        
+
         lines = ["## 相关记忆\n"]
-        
         for mem in memories:
-            lines.append(f"### {mem['description']}")
-            lines.append(f"类型: {MEMORY_TYPE_DESCRIPTIONS.get(mem['type'], mem['type'])}")
-            lines.append(f"\n{mem['content']}\n")
-            
+            mem_type = mem.get("memory_type") or mem.get("type", "user")
+            desc = mem.get("description") or (mem.get("content", "")[:80])
+            lines.append(f"### {desc}")
+            try:
+                type_label = MEMORY_TYPE_DESCRIPTIONS[MemoryType(mem_type)]
+            except (ValueError, KeyError):
+                type_label = str(mem_type)
+            lines.append(f"类型: {type_label}")
+            lines.append(f"\n{mem.get('content', '')}\n")
             if mem.get("staleness_warning"):
                 lines.append(f"⚠️ {mem['staleness_warning']}\n")
-        
         return "\n".join(lines)

@@ -175,9 +175,12 @@ class MemoryStorage:
                     content = file_path.read_text(encoding="utf-8")
                     memory = MemoryItem.from_markdown(content, file_path.stem)
                     
-                    # user_id 过滤：检查文件名是否以 user_id 开头
-                    if user_id and not file_path.stem.startswith(user_id):
-                        continue
+                    mem_user = memory.metadata.get("user_id")
+                    if user_id:
+                        id_match = file_path.stem.startswith(f"{user_id}_") or file_path.stem.startswith(user_id)
+                        meta_match = mem_user == user_id
+                        if not (id_match or meta_match):
+                            continue
                     
                     # Simple text matching
                     if query:

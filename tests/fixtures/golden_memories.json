@@ -1,0 +1,15 @@
+{
+  "user_id": "eval_user",
+  "cases": [
+    {"store": "用户喜欢 Python，讨厌 Java", "query": "写排序函数", "expect_contains": ["Python"]},
+    {"store": "用户偏好 TypeScript 写前端", "query": "前端组件", "expect_contains": ["TypeScript"]},
+    {"store": "不要用 mock 数据库做测试", "query": "测试数据库", "expect_contains": ["mock"]},
+    {"store": "项目截止日期是周五", "query": "什么时候交付", "expect_contains": ["周五"]},
+    {"store": "Grafana 看板在 /dashboard/ops", "query": "监控看板地址", "expect_contains": ["Grafana"]},
+    {"store": "用户喜欢简洁的回答，不要废话", "query": "回答风格", "expect_contains": ["简洁"]},
+    {"store": "后端使用 FastAPI", "query": "后端框架", "expect_contains": ["FastAPI"]},
+    {"store": "不要使用 any 类型", "query": "TypeScript 规范", "expect_contains": ["any"]},
+    {"store": "用户讨厌冗长的免责声明", "query": "回复格式", "expect_contains": ["讨厌"]},
+    {"store": "记住：代码注释用中文", "query": "注释语言", "expect_contains": ["中文"]}
+  ]
+}

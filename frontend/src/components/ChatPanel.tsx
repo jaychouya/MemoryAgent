@@ -2,6 +2,17 @@
 
 import { useState, useEffect, useRef } from "react";
 
+interface MemoryCitation {
+  memory_id: string;
+  memory_type: string;
+  description: string;
+  content_snippet: string;
+  score: number;
+  age_days: number;
+  is_stale: boolean;
+  selection_reason: string;
+}
+
 interface Message {
   id: string;
   content: string;
@@ -11,6 +22,7 @@ interface Message {
     turns?: number;
     tools_called?: string[];
     memories_used?: string[];
+    memory_citations?: MemoryCitation[];
     stop_reason?: string;
   };
 }
@@ -126,51 +138,137 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
   const sendMessage = async () => {
     if (!input.trim()) return;
 
+    const messageText = input.trim();
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: input,
+      content: messageText,
       role: "user",
       timestamp: new Date(),
     };
-
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
 
-    // 创建 AbortController
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    const requestBody = {
+      message: messageText,
+      session_id: currentSessionId,
+      user_id: "demo-user",
+      llm_config: modelConfig ? {
+        api_key: modelConfig.apiKey,
+        base_url: modelConfig.baseUrl,
+        model: modelConfig.model
+      } : null,
+    };
+
+    const assistantId = (Date.now() + 1).toString();
+    let streamedContent = "";
+    let toolsCalled: string[] = [];
+    let memoriesUsed: string[] = [];
+    let memoryCitations: MemoryCitation[] = [];
+
     try {
+      const streamResponse = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: abortController.signal,
+      });
+
+      if (streamResponse.ok && streamResponse.body) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantId,
+            content: "",
+            role: "assistant",
+            timestamp: new Date(),
+          },
+        ]);
+
+        const reader = streamResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line.startsWith("data:")) continue;
+            try {
+              const payload = JSON.parse(line.replace(/^data:\s*/, ""));
+              if (payload.type === "token") {
+                streamedContent += payload.content;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, content: streamedContent }
+                      : m
+                  )
+                );
+              } else if (payload.type === "tool_result" && payload.metadata?.citation) {
+                memoryCitations.push(payload.metadata.citation as MemoryCitation);
+                memoriesUsed.push(payload.metadata.citation.content_snippet);
+              } else if (payload.type === "tool_result" && payload.metadata?.source === "memory") {
+                memoriesUsed.push(payload.content);
+              } else if (payload.type === "tool_result" && payload.metadata?.tool_name) {
+                toolsCalled.push(payload.metadata.tool_name);
+              }
+            } catch {
+              /* ignore malformed SSE chunks */
+            }
+          }
+        }
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: streamedContent || "（无内容）",
+                  metadata: {
+                    tools_called: toolsCalled,
+                    memories_used: memoriesUsed,
+                    memory_citations: memoryCitations,
+                    stop_reason: "end_turn",
+                  },
+                }
+              : m
+          )
+        );
+        loadSessions();
+        return;
+      }
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: input,
-          session_id: currentSessionId,
-          user_id: "demo-user",
-          llm_config: modelConfig ? {
-            api_key: modelConfig.apiKey,
-            base_url: modelConfig.baseUrl,
-            model: modelConfig.model
-          } : null,
-        }),
+        body: JSON.stringify(requestBody),
         signal: abortController.signal,
       });
 
       const data = await response.json();
 
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: assistantId,
         content: data.response,
         role: "assistant",
         timestamp: new Date(),
-        metadata: data.decision_explanation ? {
-          turns: data.decision_explanation.confidence > 0 ? 1 : 0,
+        metadata: {
+          turns: data.decision_explanation?.confidence > 0 ? 1 : 0,
           tools_called: [],
-          memories_used: data.memory_updates?.map((m: any) => m.content) || [],
-          stop_reason: data.decision_explanation.action
-        } : undefined
+          memories_used: data.memory_citations?.map((c: MemoryCitation) => c.content_snippet)
+            || data.memory_updates?.map((m: any) => m.content) || [],
+          memory_citations: data.memory_citations || [],
+          stop_reason: data.decision_explanation?.action || "end_turn",
+        }
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -220,12 +318,42 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
               使用工具: {metadata.tools_called.join(", ")}
             </span>
           )}
-          {metadata.memories_used && metadata.memories_used.length > 0 && (
+          {metadata.memory_citations && metadata.memory_citations.length > 0 ? (
+            <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 rounded text-purple-700">
+              使用 {metadata.memory_citations.length} 条记忆
+            </span>
+          ) : metadata.memories_used && metadata.memories_used.length > 0 ? (
             <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 rounded text-purple-700">
               使用 {metadata.memories_used.length} 条记忆
             </span>
+          ) : (
+            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-500">
+              未命中记忆
+            </span>
           )}
         </div>
+        {metadata.memory_citations && metadata.memory_citations.length > 0 && (
+          <details className="mt-2 text-[10px] text-slate-600">
+            <summary className="cursor-pointer text-purple-700 font-medium">
+              查看记忆引用
+            </summary>
+            <ul className="mt-1 space-y-1.5 pl-1">
+              {metadata.memory_citations.map((c) => (
+                <li key={c.memory_id} className="bg-purple-50 rounded p-1.5 border border-purple-100">
+                  <div className="flex justify-between gap-1">
+                    <span className="font-medium">{c.description || c.memory_id}</span>
+                    <span className="text-slate-400">{c.score.toFixed(2)}</span>
+                  </div>
+                  <div className="text-slate-500">{c.memory_type} · {c.selection_reason}</div>
+                  <div className="mt-0.5 line-clamp-2">{c.content_snippet}</div>
+                  {c.is_stale && (
+                    <div className="text-amber-600 mt-0.5">陈旧 {c.age_days} 天</div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
     );
   };

@@ -11,10 +11,12 @@ Implements Claude Code's memory architecture:
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
 
 from src.memory.types import MemoryItem, MemoryType
 from src.memory.storage import MemoryStorage
 from src.memory.retrieval import MemoryRetrieval
+from src.memory.persistent_vector import PersistentVectorStore
 from src.memory.exclusions import should_exclude, get_exclusion_reason
 
 logger = logging.getLogger(__name__)
@@ -37,9 +39,18 @@ class MemoryManager:
         storage_dir: str = "memories",
         llm_service=None
     ):
+        self.storage_dir = storage_dir
+        db_path = str(Path(storage_dir) / "index.db")
+        self.persistent_vectors = PersistentVectorStore(db_path)
+        self.vector_store = self.persistent_vectors.get_vector_store()
         self.storage = MemoryStorage(storage_dir)
-        self.retrieval = MemoryRetrieval(self.storage, llm_service)
+        self.retrieval = MemoryRetrieval(
+            self.storage, llm_service, vector_store=self.vector_store
+        )
         self.llm = llm_service
+        if self.vector_store.size() == 0:
+            rows = self.storage.index.search(query="", limit=5000)
+            self.persistent_vectors.backfill_from_index_rows(rows)
     
     async def store(
         self,
@@ -83,8 +94,21 @@ class MemoryManager:
         success = await self.storage.store(memory)
         
         if success:
+            uid = user_id or memory.metadata.get("user_id")
+            self.persistent_vectors.upsert(
+                memory_id=memory.id,
+                content=memory.content,
+                user_id=uid,
+                memory_type=memory.type.value,
+            )
             return memory
         return None
+
+    async def delete_memory(self, memory_id: str) -> bool:
+        ok = await self.storage.delete(memory_id)
+        if ok:
+            self.persistent_vectors.delete(memory_id)
+        return ok
     
     async def retrieve(
         self,

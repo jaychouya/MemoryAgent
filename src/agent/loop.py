@@ -24,6 +24,7 @@ import json
 
 from src.agent.prompts.assembler import get_prompt_assembler
 from src.agent.context import ContextCompressor
+from src.memory.citations import MemoryCitation, build_citations, citations_to_legacy_strings
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ class AgentState:
     tokens_used: int = 0
     tools_called: List[str] = field(default_factory=list)
     memories_used: List[str] = field(default_factory=list)
+    memory_citations: List[MemoryCitation] = field(default_factory=list)
     is_plan_mode: bool = False
 
 
@@ -137,7 +139,8 @@ class AgentLoop:
                     session_id=session_id,
                     top_k=5
                 )
-                state.memories_used = [m.get("content", "") for m in memories[:3] if isinstance(m, dict)]
+                state.memory_citations = build_citations(memories[:5])
+                state.memories_used = citations_to_legacy_strings(state.memory_citations)
             except Exception as e:
                 logger.warning(f"Memory retrieval failed: {e}")
         
@@ -171,9 +174,13 @@ class AgentLoop:
             
             # Step 3: Check stop reason
             if response.get("stop_reason") == "end_turn":
-                # Model is done - return final content
+                final_content = response.get("content", "")
+                state.messages.append({
+                    "role": "assistant",
+                    "content": final_content
+                })
                 return AgentResult(
-                    content=response.get("content", ""),
+                    content=final_content,
                     stop_reason=StopReason.END_TURN,
                     state=state,
                     metadata={
@@ -208,9 +215,13 @@ class AgentLoop:
                 # Continue loop
                 continue
             
-            # No tool calls and not end_turn - treat as end_turn
+            final_content = response.get("content", "")
+            state.messages.append({
+                "role": "assistant",
+                "content": final_content
+            })
             return AgentResult(
-                content=response.get("content", ""),
+                content=final_content,
                 stop_reason=StopReason.END_TURN,
                 state=state
             )

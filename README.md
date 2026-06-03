@@ -97,14 +97,19 @@ tags:
 
 ## 为什么选择 MemoryAgent
 
-| 特性 | ChatGPT | Claude | MemoryAgent |
-|------|---------|--------|-------------|
-| 记住用户偏好 | ❌ 每次重来 | ❌ 每次重来 | ✅ 跨会话记忆 |
-| 记忆可编辑 | ❌ | ❌ | ✅ Obsidian 兼容 |
-| 本地部署 | ❌ | ❌ | ✅ 数据在本地 |
-| 多模型支持 | ❌ 单一模型 | ❌ 单一模型 | ✅ 15+ 厂商 |
-| 记忆分类 | ❌ | ❌ | ✅ 四类型系统 |
-| 技能学习 | ❌ | ❌ | ✅ 自动学习 |
+MemoryAgent 是 **记忆侧车（Memory Sidecar）**，不是全能 coding agent。与 Cursor / Claude Code 搭配使用，或单独作为「越用越懂你」的本地助手。
+
+| 维度 | ChatGPT 记忆 | Cursor Rules | MemoryAgent |
+|------|-------------|--------------|-------------|
+| 跨会话偏好 | 产品内黑盒 | 项目级规则 | ✅ 四类型用户模型 |
+| 记忆可编辑 | ❌ | 部分（规则文件） | ✅ Obsidian Markdown |
+| 本地/隐私 | ❌ | 视配置 | ✅ 默认本地文件 |
+| 召回可解释 | ❌ | 有限 | ✅ 显示用到的记忆 |
+| 接外部 Agent | ❌ | 内置 IDE | ✅ `/api/memory/export` + `/api/memory/recall` |
+| 写代码/跑终端 | — | ✅ | ❌（刻意不做，见 [架构决策](docs/architecture-decision.md)） |
+
+**适合**：需要长期一致偏好、禁忌、项目决策记录的用户。  
+**不适合**：替代 Cursor/Devin 完成修 bug、提 PR、跑 CI 等执行任务。
 
 ---
 

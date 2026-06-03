@@ -1,13 +1,16 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncGenerator
 import logging
 import json
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
 from src.backend.services import get_llm_service, LLMService
 from src.agent.loop import AgentLoop
+from src.agent.streaming import StreamingManager, StreamEvent, StreamEventType
 from src.agent.tools.registry import get_tool_registry, ToolRegistry
 from src.agent.tools.builtin import MemorySearchTool, MemoryStoreTool, ContextRetrieveTool
 from src.agent.tools.advanced import SemanticPatchTool, SkillSearchTool, SkillCreateTool, TraceAnalysisTool
@@ -18,6 +21,8 @@ from src.agent.plans import (
     CreatePlanTool
 )
 from src.memory.manager import MemoryManager
+from src.memory.observer import MemoryObserver
+from src.memory.citations import MemoryCitation
 from src.skills.graph import SkillGraph
 from src.agent.reflection.tracer import ExecutionTracer
 from src.backend.chat_utils import ChatExporter, FileUploader
@@ -27,6 +32,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 sessions: Dict[str, List[Dict[str, str]]] = {}
+session_metadata: Dict[str, Dict[str, Any]] = {}
 
 SESSIONS_DIR = Path("sessions")
 SESSIONS_DIR.mkdir(exist_ok=True)
@@ -92,9 +98,21 @@ class DecisionExplanation(BaseModel):
     reasoning: str
 
 
+class MemoryCitationResponse(BaseModel):
+    memory_id: str
+    memory_type: str
+    description: str
+    content_snippet: str
+    score: float
+    age_days: int
+    is_stale: bool
+    selection_reason: str
+
+
 class ChatResponse(BaseModel):
     response: str
     memory_updates: List[MemoryUpdate] = []
+    memory_citations: List[MemoryCitationResponse] = []
     decision_explanation: Optional[DecisionExplanation] = None
 
 
@@ -130,101 +148,141 @@ def get_agent_loop(llm_service) -> AgentLoop:
     return _agent_loop
 
 
+def _resolve_llm(request: ChatRequest) -> LLMService:
+    if request.llm_config:
+        return LLMService(
+            api_key=request.llm_config.api_key,
+            model=request.llm_config.model,
+            base_url=request.llm_config.base_url,
+        )
+    if global_model_config:
+        return LLMService(
+            api_key=global_model_config["api_key"],
+            model=global_model_config["model"],
+            base_url=global_model_config["base_url"],
+        )
+    return get_llm_service()
+
+
+def _truncate_session_messages(messages: List[Dict]) -> List[Dict]:
+    if len(messages) <= 20:
+        return messages
+    truncated = []
+    count = 0
+    i = len(messages) - 1
+    while i >= 0 and count < 20:
+        msg = messages[i]
+        if msg.get("role") == "tool":
+            j = i - 1
+            while j >= 0 and messages[j].get("role") == "tool":
+                j -= 1
+            for k in range(j, i + 1):
+                truncated.insert(0, messages[k])
+                count += 1
+            i = j - 1
+        else:
+            truncated.insert(0, msg)
+            count += 1
+            i -= 1
+    return truncated
+
+
+def _persist_session(session_key: str, request: ChatRequest, result) -> List[Dict]:
+    if result.state and result.state.messages:
+        sessions[session_key] = result.state.messages
+    else:
+        sessions[session_key].append({
+            "role": "user",
+            "content": request.message,
+            "timestamp": datetime.now().isoformat(),
+        })
+        sessions[session_key].append({
+            "role": "assistant",
+            "content": result.content,
+            "timestamp": datetime.now().isoformat(),
+        })
+    sessions[session_key] = _truncate_session_messages(sessions[session_key])
+    save_session(session_key, sessions[session_key])
+    return sessions[session_key]
+
+
+def _citations_from_result(result) -> List[MemoryCitationResponse]:
+    if not result.state or not result.state.memory_citations:
+        return []
+    return [
+        MemoryCitationResponse(**c.to_dict())
+        for c in result.state.memory_citations
+    ]
+
+
+def _memory_updates_from_result(result) -> List[MemoryUpdate]:
+    updates = []
+    if result.state and result.state.memory_citations:
+        for c in result.state.memory_citations:
+            updates.append(MemoryUpdate(
+                type=c.memory_type,
+                content=c.content_snippet,
+                layer="memory",
+                action="used",
+            ))
+    elif result.state and result.state.memories_used:
+        for mem in result.state.memories_used:
+            updates.append(MemoryUpdate(
+                type="retrieved",
+                content=mem,
+                layer="memory",
+                action="used",
+            ))
+    return updates
+
+
+async def _run_observer(request: ChatRequest, result):
+    global _memory_manager
+    if not _memory_manager or not result.state:
+        return
+    try:
+        observer = MemoryObserver(_memory_manager)
+        await observer.observe_turn(
+            user_message=request.message,
+            assistant_message=result.content or "",
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+    except Exception as e:
+        logger.warning(f"Memory observer failed: {e}")
+
+
+async def _execute_chat(request: ChatRequest):
+    session_key = f"{request.user_id}:{request.session_id}"
+    if session_key not in sessions:
+        sessions[session_key] = []
+    llm = _resolve_llm(request)
+    agent = get_agent_loop(llm)
+    result = await agent.run(
+        user_message=request.message,
+        context_messages=sessions[session_key],
+        session_id=request.session_id,
+        user_id=request.user_id,
+    )
+    _persist_session(session_key, request, result)
+    await _run_observer(request, result)
+    return result
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
-        session_key = f"{request.user_id}:{request.session_id}"
-        if session_key not in sessions:
-            sessions[session_key] = []
-        
-        if request.llm_config:
-            llm = LLMService(
-                api_key=request.llm_config.api_key,
-                model=request.llm_config.model,
-                base_url=request.llm_config.base_url
-            )
-        elif global_model_config:
-            llm = LLMService(
-                api_key=global_model_config["api_key"],
-                model=global_model_config["model"],
-                base_url=global_model_config["base_url"]
-            )
-        else:
-            llm = get_llm_service()
-        
-        agent = get_agent_loop(llm)
-        
-        result = await agent.run(
-            user_message=request.message,
-            context_messages=sessions[session_key],
-            session_id=request.session_id,
-            user_id=request.user_id
-        )
-        
-        # 保存完整的消息历史，包括工具调用
-        if result.state and result.state.messages:
-            # 更新会话消息为完整的历史
-            sessions[session_key] = result.state.messages
-        else:
-            # 降级方案：只保存 user 和 assistant 消息
-            sessions[session_key].append({
-                "role": "user",
-                "content": request.message,
-                "timestamp": datetime.now().isoformat()
-            })
-            sessions[session_key].append({
-                "role": "assistant",
-                "content": result.content,
-                "timestamp": datetime.now().isoformat()
-            })
-        
-        save_session(session_key, sessions[session_key])
-        
-        # 截断逻辑：保留完整的消息链
-        if len(sessions[session_key]) > 20:
-            messages = sessions[session_key]
-            truncated = []
-            count = 0
-            i = len(messages) - 1
-            while i >= 0 and count < 20:
-                msg = messages[i]
-                # 如果是工具结果，向前找到对应的工具调用
-                if msg.get("role") == "tool":
-                    # 向前找到工具调用
-                    j = i - 1
-                    while j >= 0 and messages[j].get("role") == "tool":
-                        j -= 1
-                    # 添加工具调用和所有相关结果
-                    for k in range(j, i + 1):
-                        truncated.insert(0, messages[k])
-                        count += 1
-                    i = j - 1
-                else:
-                    truncated.insert(0, msg)
-                    count += 1
-                    i -= 1
-            sessions[session_key] = truncated
-        
-        memory_updates = []
-        if result.state and result.state.memories_used:
-            for mem in result.state.memories_used:
-                memory_updates.append(MemoryUpdate(
-                    type="retrieved",
-                    content=mem,
-                    layer="memory",
-                    action="used"
-                ))
-        
+        result = await _execute_chat(request)
         return ChatResponse(
             response=result.content,
-            memory_updates=memory_updates,
+            memory_updates=_memory_updates_from_result(result),
+            memory_citations=_citations_from_result(result),
             decision_explanation=DecisionExplanation(
                 action=result.stop_reason.value,
                 confidence=0.9,
-                reasoning=f"Agent completed in {result.state.turn_count} turns"
-            )
+                reasoning=f"Agent completed in {result.state.turn_count} turns",
+            ),
         )
-        
     except Exception as e:
         logger.error(f"Chat error: {e}", exc_info=True)
         error_msg = str(e)
@@ -234,9 +292,51 @@ async def chat(request: ChatRequest):
             decision_explanation=DecisionExplanation(
                 action="error_fallback",
                 confidence=0.0,
-                reasoning=f"Error: {str(e)}"
-            )
+                reasoning=f"Error: {str(e)}",
+            ),
         )
+
+
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    async def event_generator() -> AsyncGenerator[str, None]:
+        streamer = StreamingManager()
+        try:
+            result = await _execute_chat(request)
+
+            if result.state:
+                for tool_name in result.state.tools_called:
+                    evt = streamer.create_tool_result_event(tool_name, "completed")
+                    yield evt.to_sse()
+                citations = _citations_from_result(result)
+                for cit in citations:
+                    meta_evt = StreamEvent(
+                        type=StreamEventType.TOOL_RESULT,
+                        content=cit.content_snippet[:200],
+                        metadata={"source": "memory", "citation": cit.model_dump()},
+                    )
+                    yield meta_evt.to_sse()
+
+            content = result.content or ""
+            chunk_size = 32
+            for i in range(0, len(content), chunk_size):
+                yield streamer.create_token_event(content[i : i + chunk_size]).to_sse()
+                await asyncio.sleep(0)
+
+            done = streamer.create_done_event()
+            done.metadata["citations"] = [
+                c.model_dump() for c in _citations_from_result(result)
+            ]
+            yield done.to_sse()
+        except Exception as e:
+            logger.error(f"Stream chat error: {e}", exc_info=True)
+            yield streamer.create_error_event(str(e)).to_sse()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/sessions")
@@ -249,8 +349,9 @@ async def list_sessions(user_id: str = "anonymous"):
             last_message = messages[-1] if messages else None
             
             # 从第一条用户消息中提取会话名称
-            name = session_id
-            if messages and isinstance(messages, list):
+            meta = session_metadata.get(key, {})
+            name = meta.get("name") or session_id
+            if not meta.get("name") and messages and isinstance(messages, list):
                 first_user_msg = next((m for m in messages if m.get("role") == "user"), None)
                 if first_user_msg:
                     content = first_user_msg.get("content", "")
@@ -288,10 +389,7 @@ async def rename_session(request: dict):
     
     session_key = f"{user_id}:{session_id}"
     if session_key in sessions:
-        if "metadata" not in sessions[session_key]:
-            sessions[session_key]["metadata"] = {}
-        sessions[session_key]["metadata"]["name"] = new_name
-        save_session(session_key, sessions[session_key])
+        session_metadata[session_key] = {"name": new_name}
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Session not found")
 
