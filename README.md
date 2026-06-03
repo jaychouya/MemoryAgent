@@ -2,164 +2,163 @@
 
 <div align="center">
 
-🧠 **具备认知记忆架构的 AI Agent，让 AI 记住你的偏好，越用越懂你**
+🧠 **让 ChatGPT 记住你是谁 — 具备认知记忆架构的 AI Agent**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.1-black.svg)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-290+-brightgreen.svg)](#测试)
 
-[功能特性](#功能特性) • [架构设计](#架构设计) • [快速开始](#快速开始) • [API文档](#api文档) • [测试](#测试)
+**每次开新对话都要重新介绍自己？MemoryAgent 让 AI 记住你的偏好，越用越懂你。**
+
+[功能亮点](#功能亮点) • [快速开始](#快速开始) • [为什么选择 MemoryAgent](#为什么选择-memoryagent) • [架构设计](#架构设计) • [API 文档](#api-文档)
 
 </div>
 
 ---
 
-## 📖 项目简介
+## 演示
 
-MemoryAgent 是一个具备**认知记忆架构**的智能 AI Agent，让 AI 记住你的偏好，越用越懂你。
+<!-- 替换为你的 GIF 演示链接 -->
+> 录制一个 30 秒的 GIF：展示 AI 记住用户偏好 → 新对话自动使用 → Obsidian 编辑记忆
 
-### 🎯 核心特性
+```
+用户: 我喜欢 Python，讨厌 Java
+AI:   好的，我记住了。
 
-- **四类型记忆系统** - 用户画像、行为反馈、项目动态、外部引用
-- **跨会话记忆共享** - 记住你的偏好，下次对话继续使用
-- **基于 Claude Code 的 Agent Loop 架构** - 智能决策循环
-- **支持 15+ 大模型** - OpenAI、百炼、小米MiMo、智谱等
+--- 新对话 ---
+
+用户: 帮我写个排序函数
+AI:   用 Python 实现（因为你偏好 Python）...
+```
 
 ---
 
-## 🚀 快速开始
+## 功能亮点
 
-### macOS
+### 🧠 四类型记忆系统
 
-#### 方式一：DMG 安装包（推荐）
+不只是简单的"记住对话"，而是结构化的认知记忆：
 
-1. 下载 `MemoryAgent-Installer.dmg`
-2. 打开 DMG 文件
-3. 将 `MemoryAgent` 拖入 `Applications` 文件夹
-4. 在启动台或应用程序中打开 `MemoryAgent`
+| 类型 | 用途 | 示例 |
+|------|------|------|
+| **用户画像** | 你的偏好、角色、知识水平 | "我喜欢 Python" |
+| **行为反馈** | AI 该做什么、不该做什么 | "不要用 mock 数据库" |
+| **项目动态** | 截止日期、重要决策 | "周五前完成 API" |
+| **外部引用** | 去哪找什么信息 | "Grafana 看板地址" |
 
-#### 方式二：从源码运行
+### 🔄 跨会话记忆共享
+
+```
+会话 1: 用户喜欢 Python，讨厌 Java
+会话 2: 帮我写排序 → AI 自动用 Python（记住你的偏好）
+会话 3: 推荐框架 → AI 推荐 FastAPI（知道你喜欢 Python）
+```
+
+### 🗜️ 智能上下文压缩
+
+5 步压缩策略，解决长对话"忘记前面说过什么"的问题：
+- 大结果存磁盘
+- 清理旧消息
+- 裁剪老工具输出
+- 上下文折叠（90% 阈值）
+- 全量摘要（95% 阈值）
+
+### 📝 Obsidian 兼容
+
+记忆以 Markdown 文件存储，可直接在 Obsidian 中编辑：
+
+```yaml
+---
+name: user_abc123
+description: 用户偏好
+type: user
+tags:
+  - preference
+  - python
+---
+#preference #python
+
+用户喜欢 Python，讨厌 Java
+```
+
+### 🔧 15+ 大模型支持
+
+一键切换，无需改代码：
+
+| 厂商 | 模型 |
+|------|------|
+| OpenAI | GPT-4, GPT-4o, o3, o4-mini |
+| 阿里云百炼 | qwen-max, qwen-plus, deepseek-v4-pro |
+| 小米 MiMo | mimo-v2.5-pro, mimo-v2.5 |
+| 智谱 GLM | glm-5.1, glm-5, glm-4-plus |
+| DeepSeek | deepseek-v4-pro, deepseek-r1 |
+| 月之暗面 | kimi-k2, kimi-k2-mini |
+| 字节豆包 | doubao-seed-1-8-251228 |
+| 更多... | OpenRouter, 自定义 API |
+
+---
+
+## 为什么选择 MemoryAgent
+
+| 特性 | ChatGPT | Claude | MemoryAgent |
+|------|---------|--------|-------------|
+| 记住用户偏好 | ❌ 每次重来 | ❌ 每次重来 | ✅ 跨会话记忆 |
+| 记忆可编辑 | ❌ | ❌ | ✅ Obsidian 兼容 |
+| 本地部署 | ❌ | ❌ | ✅ 数据在本地 |
+| 多模型支持 | ❌ 单一模型 | ❌ 单一模型 | ✅ 15+ 厂商 |
+| 记忆分类 | ❌ | ❌ | ✅ 四类型系统 |
+| 技能学习 | ❌ | ❌ | ✅ 自动学习 |
+
+---
+
+## 快速开始
+
+### 方式一：一键安装（推荐）
+
+**macOS:**
+```bash
+# 下载 DMG 安装包
+open https://github.com/jaychouya/MemoryAgent/releases
+```
+
+**Windows:**
+```powershell
+# 下载 ZIP 安装包
+Start-Process "https://github.com/jaychouya/MemoryAgent/releases"
+```
+
+### 方式二：从源码运行
 
 ```bash
 # 克隆仓库
 git clone https://github.com/jaychouya/MemoryAgent.git
 cd MemoryAgent
 
-# 安装依赖
+# 安装后端依赖
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+
+# 安装前端依赖
+cd frontend && npm install && cd ..
 
 # 启动
 python src/main.py
 ```
 
-### Windows
-
-#### 方式一：ZIP 安装包（推荐）
-
-1. 下载 `MemoryAgent-Windows-1.0.0.zip`
-2. 解压到任意目录
-3. 双击 `MemoryAgent.bat` 启动
-4. 或在 PowerShell 中运行 `.\MemoryAgent.ps1`
-
-#### 方式二：从源码运行
-
-```powershell
-# 克隆仓库
-git clone https://github.com/jaychouya/MemoryAgent.git
-cd MemoryAgent
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 启动
-python src/main.py
-```
+访问 http://localhost:3000，点击「配置」按钮设置 API Key。
 
 ### 系统要求
 
-- **macOS**: 10.15 或更高版本
-- **Windows**: 10 或更高版本
-- **Python**: 3.9 或更高版本
-- **网络**: 需要网络连接（用于 API 调用）
-
-## ✨ 功能特性
-
-### 🧠 Agent Loop (智能决策循环)
-
-```python
-while True:
-    1. 压缩上下文 (5步策略)
-    2. 调用 LLM API
-    3. If end_turn → break
-    4. 执行工具调用
-    5. 更新状态 → continue
-```
-
-### 📚 四类型记忆系统
-
-| 类型 | 用途 | 示例 |
-|------|------|------|
-| **用户画像 (User)** | 用户偏好、角色、知识水平 | "我喜欢Python" |
-| **行为反馈 (Feedback)** | 该做什么、不该做什么 | "不要用mock数据库" |
-| **项目动态 (Project)** | 截止日期、重要决策 | "周五前完成API" |
-| **外部引用 (Reference)** | 去哪找什么信息 | "Grafana看板地址" |
-
-### 🗜️ 五步上下文压缩
-
-1. **大结果存磁盘** - 工具结果 >50KB 存盘，保留预览
-2. **清理旧消息** - 移除过时的对话开头
-3. **裁剪老工具输出** - 时间衰减，清理可重新获取的结果
-4. **上下文折叠** - 90% 阈值触发，动态压缩视图
-5. **全量摘要** - 95% 阈值触发，生成结构化摘要
-
-### 🔧 语义化代码理解
-
-使用 tree-sitter 进行 AST 解析，实现代码的语义匹配：
-
-```python
-from src.agent.semantic import SemanticPatcher
-
-patcher = SemanticPatcher()
-result = patcher.find_and_replace(
-    file_content="def hello():\n    print('world')",
-    old_pattern="def hello():\n    print('world')",
-    new_pattern="def greet():\n    print('greet')",
-    language="python"
-)
-```
-
-### 📊 技能知识图谱
-
-基于 networkx 构建技能图谱，支持：
-- 前置条件匹配 (框架、Node版本、数据库类型)
-- 依赖关系追踪
-- 成功/失败反馈学习
-- 跨项目技能迁移
-
-### 🔄 执行轨迹自动抽象
-
-自动从执行轨迹中发现可复用模式，生成技能初稿：
-
-```python
-from src.agent.reflection import ExecutionTracer, SkillGenerator
-
-tracer = ExecutionTracer()
-generator = SkillGenerator()
-
-# 记录执行轨迹
-tracer.start_trace("Deploy to Vercel")
-tracer.record_tool_call("npm", {"args": "install"}, result)
-tracer.record_tool_call("vercel", {"args": "deploy"}, result)
-tracer.end_trace(success=True)
-
-# 自动生成技能
-skills = generator.generate_from_traces(tracer.get_traces())
-```
+- Python 3.9+
+- Node.js 18+
+- 网络连接（用于 API 调用）
 
 ---
 
-## 🏗️ 架构设计
+## 架构设计
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -192,269 +191,77 @@ src/
 ├── agent/                    # Agent 核心
 │   ├── loop.py              # Agent Loop (while true 循环)
 │   ├── tools/               # 工具系统
-│   │   ├── base.py          # 工具基类
-│   │   ├── registry.py      # 工具注册表
-│   │   ├── builtin.py       # 内置工具
-│   │   └── advanced.py      # 高级工具
 │   ├── prompts/             # 动态 System Prompt
-│   │   ├── sections.py      # Prompt Section 定义
-│   │   └── assembler.py     # 动态组装器
 │   ├── context/             # 上下文压缩
 │   ├── semantic/            # 语义化代码理解
-│   │   ├── parser.py        # AST 解析器 (tree-sitter)
-│   │   ├── matcher.py       # AST 匹配器
-│   │   └── patcher.py       # 语义 Patcher
-│   ├── reflection/          # 执行轨迹抽象
-│   │   ├── tracer.py        # 轨迹记录器
-│   │   ├── analyzer.py      # 序列分析器
-│   │   └── generator.py     # 技能生成器
-│   └── plans/               # Plan Mode
+│   └── reflection/          # 执行轨迹抽象
 ├── memory/                  # 记忆系统
 │   ├── types/               # 四类型记忆定义
 │   ├── storage.py           # 文件存储 (markdown + YAML)
 │   ├── retrieval.py         # LLM-based 召回
-│   └── exclusions.py        # 排除规则
+│   ├── quality.py           # 记忆质量管理
+│   └── vector_store.py      # 向量搜索
 ├── skills/                  # 技能知识图谱
-│   ├── node.py              # 技能节点
-│   ├── graph.py             # 图谱 (networkx)
-│   └── matcher.py           # 技能匹配器
 └── backend/                 # 后端服务
     ├── main.py              # FastAPI 入口
-    ├── api/                 # API 路由
-    └── services/            # LLM 服务
+    └── api/                 # API 路由
 ```
 
 ---
 
-## 🚀 快速开始
+## API 文档
 
-### 环境要求
-
-- Python 3.9+
-- Node.js 18+
-- npm 或 yarn
-
-### 安装步骤
-
-1. **克隆仓库**
-```bash
-git clone https://github.com/yourusername/memoryai.git
-cd memoryai
-```
-
-2. **后端设置**
-```bash
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 安装依赖
-pip install -r requirements.txt
-```
-
-3. **前端设置**
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-4. **配置环境变量**
-```bash
-cp .env.example .env
-# 编辑 .env 文件，添加你的 API Key
-```
-
-5. **启动服务**
-```bash
-# 启动后端 (终端1)
-source venv/bin/activate
-uvicorn src.backend.main:app --host 0.0.0.0 --port 8000 --reload
-
-# 启动前端 (终端2)
-cd frontend
-npm run dev
-```
-
-6. **访问应用**
-- 前端界面: http://localhost:3000
-- API 文档: http://localhost:8000/docs
-- 健康检查: http://localhost:8000/health
-
----
-
-## 📡 API 文档
-
-### 对话 API
+### 发送消息
 
 ```bash
-# 发送消息
 curl -X POST http://localhost:8000/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "你好", "session_id": "test", "user_id": "user1"}'
+  -d '{"message": "我喜欢 Python", "session_id": "test", "user_id": "user1"}'
 ```
 
-### 配置 API
+### 快速配置
 
 ```bash
-# 保存模型配置
-curl -X POST http://localhost:8000/api/config \
+curl -X POST http://localhost:8000/api/config/quick-setup \
   -H "Content-Type: application/json" \
-  -d '{
-    "api_key": "your-api-key",
-    "base_url": "https://api.openai.com/v1",
-    "model": "gpt-4"
-  }'
+  -d '{"provider": "openai", "api_key": "your-key"}'
 ```
 
-### 会话管理
+### 获取记忆
 
 ```bash
-# 获取会话列表
-curl http://localhost:8000/api/sessions?user_id=demo-user
-
-# 删除会话
-curl -X DELETE http://localhost:8000/api/sessions/{session_id}
-```
-
-### 记忆统计
-
-```bash
-# 获取记忆统计
 curl http://localhost:8000/api/memory/stats
 ```
 
+更多 API 文档访问：http://localhost:8000/docs
+
 ---
 
-## 🧪 测试
-
-### 运行测试
+## 测试
 
 ```bash
 # 运行所有测试
-source venv/bin/activate
 python -m pytest tests/ -v
 
-# 运行特定测试
-python -m pytest tests/test_semantic_patch.py -v
-python -m pytest tests/test_skill_graph.py -v
-python -m pytest tests/test_trace_to_skill.py -v
-```
-
-### 测试覆盖
-
-```
-tests/test_api.py             - 4 tests   ✅ API 测试
-tests/test_config.py          - 4 tests   ✅ 配置测试
-tests/test_decision_engine.py - 7 tests   ✅ 决策引擎测试
-tests/test_embedding.py       - 4 tests   ✅ 向量化测试
-tests/test_memory_manager.py  - 4 tests   ✅ 记忆管理测试
-tests/test_models.py          - 7 tests   ✅ 模型测试
-tests/test_semantic_patch.py  - 14 tests  ✅ 语义补丁测试
-tests/test_short_term_memory.py - 3 tests ✅ 短期记忆测试
-tests/test_skill_graph.py     - 15 tests  ✅ 技能图谱测试
-tests/test_trace_to_skill.py  - 12 tests  ✅ 执行轨迹测试
-tests/test_working_memory.py  - 5 tests   ✅ 工作记忆测试
-----------------------------------------------
-Total: 79 tests passed
+# 测试结果
+# 290+ passed, 7 skipped
 ```
 
 ---
 
-## 🛠️ 技术栈
+## 技术栈
 
-### 后端
-
-| 技术 | 用途 |
+| 层级 | 技术 |
 |------|------|
-| Python 3.9+ | 主要语言 |
-| FastAPI | Web 框架 |
-| OpenAI SDK | LLM 调用 |
-| tree-sitter | AST 解析 |
-| networkx | 知识图谱 |
-| Redis | 工作记忆 (可选) |
-
-### 前端
-
-| 技术 | 用途 |
-|------|------|
-| Next.js 14 | React 框架 |
-| TypeScript | 类型安全 |
-| Tailwind CSS | 样式系统 |
-
-### 支持的 LLM 厂商
-
-| 厂商 | 模型 |
-|------|------|
-| OpenAI | GPT-4, GPT-4.1, o3, o4-mini |
-| 百炼 (阿里云) | qwen-max, qwen-plus, deepseek-v4-pro |
-| 小米 (MiMo) | mimo-v2.5-pro, mimo-v2.5 |
-| 智谱 (GLM) | glm-5.1, glm-5, glm-4-plus |
-| DeepSeek | deepseek-v4-pro, deepseek-r1 |
-| 月之暗面 (Kimi) | kimi-k2, kimi-k2-mini |
-| 字节 (豆包) | doubao-seed-1-8-251228 |
-| MiniMax | MiniMax-M2.7, MiniMax-M2.5 |
-| 讯飞 (星火) | spark-5.0-ultra |
-| 零一万物 (Yi) | yi-lightning, yi-large |
-| 硅基流动 | Qwen/Qwen3-235B-A22B |
-| OpenRouter | 多模型聚合 |
-| 自定义 | 任何 OpenAI 兼容 API |
+| **前端** | Next.js 14, TypeScript, Tailwind CSS |
+| **后端** | Python 3.9, FastAPI, OpenAI SDK |
+| **记忆** | Markdown + YAML, SQLite, 向量搜索 |
+| **图谱** | networkx, tree-sitter |
+| **测试** | pytest, 290+ 测试用例 |
 
 ---
 
-## 📁 项目结构
-
-```
-memoryai/
-├── src/                          # 源代码
-│   ├── agent/                    # Agent 核心
-│   ├── memory/                   # 记忆系统
-│   ├── skills/                   # 技能图谱
-│   └── backend/                  # 后端服务
-├── frontend/                     # 前端代码
-│   ├── src/
-│   │   ├── app/                  # Next.js 页面
-│   │   └── components/           # React 组件
-│   └── package.json
-├── tests/                        # 测试文件
-├── docs/                         # 文档
-├── memories/                     # 记忆存储
-├── skills/                       # 技能存储
-├── traces/                       # 执行轨迹
-├── requirements.txt              # Python 依赖
-├── pyproject.toml                # 项目配置
-└── README.md                     # 本文件
-```
-
----
-
-## 🔧 配置
-
-### 环境变量
-
-创建 `.env` 文件：
-
-```env
-# OpenAI
-OPENAI_API_KEY=your-openai-api-key
-
-# 百炼 (阿里云)
-DASHSCOPE_API_KEY=your-dashscope-api-key
-
-# 小米 MiMo
-XIAOMI_API_KEY=your-xiaomi-api-key
-
-# 智谱
-ZHIPU_API_KEY=your-zhipu-api-key
-```
-
-### 模型配置
-
-在前端界面点击「配置」按钮，选择厂商并填写 API Key 即可。
-
----
-
-## 🤝 贡献
+## 贡献
 
 欢迎贡献！请遵循以下步骤：
 
@@ -464,22 +271,15 @@ ZHIPU_API_KEY=your-zhipu-api-key
 4. 推送到分支 (`git push origin feature/your-feature`)
 5. 创建 Pull Request
 
-### 开发规范
-
-- 遵循 PEP 8 代码规范
-- 添加单元测试
-- 更新文档
-- 使用中文注释
-
 ---
 
-## 📄 许可证
+## 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
 ---
 
-## 🙏 致谢
+## 致谢
 
 - [Claude Code](https://www.anthropic.com/) - 架构设计灵感
 - [FastAPI](https://fastapi.tiangolo.com/) - Web 框架
@@ -489,14 +289,10 @@ ZHIPU_API_KEY=your-zhipu-api-key
 
 ---
 
-## 📧 联系方式
-
-如有问题或建议，请创建 [Issue](https://github.com/yourusername/memoryai/issues)
-
----
-
 <div align="center">
 
 **⭐ 如果这个项目对你有帮助，请给个 Star！⭐**
+
+[![Star History Chart](https://api.star-history.com/svg?repos=jaychouya/MemoryAgent&type=Date)](https://star-history.com/#jaychouya/MemoryAgent&Date)
 
 </div>
