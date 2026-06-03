@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface Message {
   id: string;
@@ -43,6 +43,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showSessions, setShowSessions] = useState(false);
   const [showMetadata, setShowMetadata] = useState(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -56,6 +57,30 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     } catch (error) {
       console.error("Failed to load sessions:", error);
     }
+  };
+
+  const deleteSession = async (sessionId: string) => {
+    if (!confirm("确定要删除这个会话吗？")) return;
+    
+    try {
+      await fetch(`/api/sessions/${sessionId}?user_id=demo-user`, {
+        method: "DELETE",
+      });
+      
+      // 如果删除的是当前会话，创建新会话
+      if (sessionId === currentSessionId) {
+        createNewSession();
+      }
+      
+      loadSessions();
+    } catch (error) {
+      console.error("Failed to delete session:", error);
+    }
+  };
+
+  const clearCurrentChat = () => {
+    if (!confirm("确定要清空当前聊天记录吗？")) return;
+    setMessages([]);
   };
 
   const generateSessionName = (firstMessage: string) => {
@@ -112,6 +137,10 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     setInput("");
     setIsLoading(true);
 
+    // 创建 AbortController
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -126,6 +155,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
             model: modelConfig.model
           } : null,
         }),
+        signal: abortController.signal,
       });
 
       const data = await response.json();
@@ -144,10 +174,28 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error("Failed to send message:", error);
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        // 用户终止了请求
+        const abortMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: "（已终止回复）",
+          role: "assistant",
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, abortMessage]);
+      } else {
+        console.error("Failed to send message:", error);
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
   };
 
@@ -211,25 +259,41 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
               <p className="text-[11px] text-slate-400 text-center py-4">暂无会话</p>
             ) : (
               sessions.map((session) => (
-                <button
+                <div
                   key={session.session_id}
-                  onClick={() => switchSession(session.session_id)}
-                  className={`w-full text-left px-2 py-1.5 rounded-md mb-1 transition-colors ${
+                  className={`group relative px-2 py-1.5 rounded-md mb-1 transition-colors ${
                     currentSessionId === session.session_id
                       ? "bg-indigo-50 text-indigo-700"
                       : "hover:bg-slate-50 text-slate-600"
                   }`}
                 >
-                  <p className="text-[11px] font-medium truncate">{session.name || session.session_id}</p>
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] text-slate-400">{session.message_count} 条消息</p>
-                    {session.last_timestamp && (
-                      <p className="text-[10px] text-slate-400">
-                        {new Date(session.last_timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
-                      </p>
-                    )}
-                  </div>
-                </button>
+                  <button
+                    onClick={() => switchSession(session.session_id)}
+                    className="w-full text-left"
+                  >
+                    <p className="text-[11px] font-medium truncate">{session.name || session.session_id}</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-slate-400">{session.message_count} 条消息</p>
+                      {session.last_timestamp && (
+                        <p className="text-[10px] text-slate-400">
+                          {new Date(session.last_timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteSession(session.session_id);
+                    }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 w-5 h-5 rounded hover:bg-red-100 flex items-center justify-center transition-opacity"
+                    title="删除会话"
+                  >
+                    <svg className="w-3 h-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -253,6 +317,13 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
             <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{currentSessionId}</span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={clearCurrentChat}
+              className="text-[10px] px-2 py-1 rounded transition-colors bg-slate-100 text-slate-500 hover:bg-red-100 hover:text-red-600"
+              title="清空聊天记录"
+            >
+              清空
+            </button>
             <button
               onClick={() => setShowMetadata(!showMetadata)}
               className={`text-[10px] px-2 py-1 rounded transition-colors ${
@@ -332,7 +403,9 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  sendMessage();
+                  if (!isLoading) {
+                    sendMessage();
+                  }
                 }
               }}
               placeholder="输入消息... (Shift+Enter 换行)"
@@ -341,16 +414,29 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
               style={{ minHeight: "40px", maxHeight: "150px" }}
               disabled={isLoading}
             />
-            <button
-              onClick={sendMessage}
-              disabled={isLoading || !input.trim()}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-[13px] font-medium flex items-center gap-1.5 flex-shrink-0"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-              发送
-            </button>
+            {isLoading ? (
+              <button
+                onClick={stopGeneration}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-[13px] font-medium flex items-center gap-1.5 flex-shrink-0"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                </svg>
+                终止
+              </button>
+            ) : (
+              <button
+                onClick={sendMessage}
+                disabled={!input.trim()}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-[13px] font-medium flex items-center gap-1.5 flex-shrink-0"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                发送
+              </button>
+            )}
           </div>
         </div>
       </div>
