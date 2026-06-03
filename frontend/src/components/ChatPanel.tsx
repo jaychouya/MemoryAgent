@@ -401,6 +401,8 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
                 e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
               }}
               onKeyDown={(e) => {
+                // 忽略中文输入法的 Enter（确认输入）
+                if (e.nativeEvent.isComposing) return;
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   if (!isLoading) {
