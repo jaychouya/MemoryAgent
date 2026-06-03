@@ -34,6 +34,11 @@ EXCLUSION_PATTERNS = {
         "代码组织",
         "file structure",
         "directory structure",
+        "函数名",
+        "变量名",
+        "类名",
+        "function name",
+        "variable name",
     ],
     
     # Git history (use git log instead)
@@ -44,6 +49,8 @@ EXCLUSION_PATTERNS = {
         "提交历史",
         "commit history",
         "last commit",
+        "git diff",
+        "git status",
     ],
     
     # Debugging solutions (already in code/commits)
@@ -53,6 +60,8 @@ EXCLUSION_PATTERNS = {
         "debug",
         "fix",
         "解决方案",
+        "排查步骤",
+        "调试方法",
     ],
     
     # Temporary states
@@ -62,6 +71,17 @@ EXCLUSION_PATTERNS = {
         "待完成",
         "in progress",
         "todo",
+        "临时",
+        "暂时",
+    ],
+    
+    # CLAUDE.md content (already documented)
+    "claude_md": [
+        "项目规范",
+        "编码规范",
+        "开发规范",
+        "coding style",
+        "code style",
     ],
 }
 
