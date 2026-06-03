@@ -20,18 +20,13 @@
 
 ## 演示
 
-<!-- 替换为你的 GIF 演示链接 -->
-> 录制一个 30 秒的 GIF：展示 AI 记住用户偏好 → 新对话自动使用 → Obsidian 编辑记忆
+<div align="center">
+  <img src="docs/marketing/demo.svg" alt="MemoryAgent Demo" width="100%">
+</div>
 
-```
-用户: 我喜欢 Python，讨厌 Java
-AI:   好的，我记住了。
+**场景 1**: 用户告诉 AI 自己的偏好 → AI 记住
 
---- 新对话 ---
-
-用户: 帮我写个排序函数
-AI:   用 Python 实现（因为你偏好 Python）...
-```
+**场景 2**: 新对话 → AI 自动使用记忆，用 Python 写排序函数
 
 ---
 
