@@ -24,6 +24,32 @@ from src.agent.tool_executor import (
 logger = logging.getLogger(__name__)
 
 MAX_OUTPUT_RECOVERY = 3
+
+
+def _maybe_compress_tool_results(results: List[Dict]) -> List[Dict]:
+    from src.utils.config import settings
+    from src.agent.ccr_store import compress_with_ccr
+
+    if not settings.CCR_ENABLED:
+        return results
+    out = []
+    for r in results:
+        content = str(r.get("content", ""))
+        if len(content) <= settings.CCR_OFFLOAD_THRESHOLD:
+            out.append(r)
+            continue
+        preview, ref_id, stats = compress_with_ccr(
+            content,
+            settings.CCR_STORAGE_DIR,
+            settings.CCR_OFFLOAD_THRESHOLD,
+            settings.CCR_PREVIEW_CHARS,
+        )
+        meta = dict(r.get("metadata") or {})
+        meta["ccr"] = stats
+        if ref_id:
+            meta["ccr_ref"] = ref_id
+        out.append({**r, "content": preview, "metadata": meta})
+    return out
 OUTPUT_NUDGE = (
     "Output token limit hit. Resume directly from the cutoff — no apology, "
     "no recap. Split remaining work into smaller steps."
@@ -169,6 +195,7 @@ async def execute_query_loop(
 
         executor.schedule_all(tool_calls, user_id=user_id, session_id=session_id)
         raw_results = await executor.collect(tool_calls)
+        raw_results = _maybe_compress_tool_results(raw_results)
 
         for r in raw_results:
             emit(LoopEvent(

@@ -126,6 +126,13 @@ def _run_fastmcp():
             )
         )
 
+    @mcp.tool()
+    async def memory_retrieve_blob(ref_id: str) -> str:
+        """Load full tool/log content by CCR ref (Headroom-style reversible compression)."""
+        from src.mcp_server.blob_tools import retrieve_blob_tool
+
+        return format_tool_json(await retrieve_blob_tool(ref_id, _STORAGE))
+
     mcp.run(transport="stdio")
 
 

@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     PROVENANCE_ENABLED: bool = True
     SYMBOLIC_MEMORY_ENABLED: bool = True
     SYMBOLIC_MEMORY_MIN_TOOLS: int = 3
+    CCR_ENABLED: bool = True
+    CCR_STORAGE_DIR: str = "memories"
+    CCR_OFFLOAD_THRESHOLD: int = 8192
+    CCR_PREVIEW_CHARS: int = 4096
     RECALL_EVAL_MIN: float = 0.9
     
     # Decision Engine Settings

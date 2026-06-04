@@ -7,7 +7,8 @@ import asyncio
 def test_tools_registered():
     _register_handlers("/tmp/memories")
     assert "memory_recall" in _HANDLERS
-    assert len(TOOLS) == 6
+    assert len(TOOLS) == 7
+    assert "memory_retrieve_blob" in _HANDLERS
 
 
 def test_handle_initialize():

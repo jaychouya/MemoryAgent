@@ -7,6 +7,7 @@ _PROMPT_SNIPPET = """
 2. **回答时**：只引用 recall 结果；陈旧记忆先核实再当事实。
 3. **回答后**：用户明确偏好/禁忌/项目决策/链接时，调用 `memory_store`（`memory_type`: user|feedback|project|reference）。
 4. 需要整段注入系统提示时：调用 `memory_export` 取 `prompt_block`。
+5. 上下文里出现 `memory_retrieve_blob(ref_id=ccr_…)` 时，用该工具取回完整 tool 输出再分析。
 """.strip()
 
 

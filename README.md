@@ -2,17 +2,17 @@
 
 <div align="center">
 
-🧠 **让 ChatGPT 记住你是谁 — 具备认知记忆架构的 AI Agent**
+🧠 **本地记忆侧车 — 让 Cursor / Claude Code 越用越懂你**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.1-black.svg)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-370+-brightgreen.svg)](#测试)
+[![Tests](https://img.shields.io/badge/Tests-400+-brightgreen.svg)](#测试)
 
-**每次开新对话都要重新介绍自己？MemoryAgent 让 AI 记住你的偏好，越用越懂你。**
+**每次新会话都要重讲偏好？MemoryAgent 做长期记忆与可解释召回，Coding Agent 专注写代码——分工清晰、数据留在本地。**
 
-[功能亮点](#功能亮点) • [快速开始](#快速开始) • [为什么选择 MemoryAgent](#为什么选择-memoryagent) • [架构设计](#架构设计) • [API 文档](#api-文档)
+[核心优势](#核心优势) • [功能亮点](#功能亮点) • [快速开始](#快速开始) • [架构设计](#架构设计) • [API 文档](#api-文档)
 
 </div>
 
@@ -27,6 +27,45 @@
 **场景 1**: 用户告诉 AI 自己的偏好 → AI 记住
 
 **场景 2**: 新对话 → AI 自动使用记忆，用 Python 写排序函数
+
+---
+
+## 核心优势
+
+### 1. 定位清晰：记忆侧车，不抢 Coding Agent 的活
+
+不做终端、Git、浏览器自动化；专注 **Remember + Align**。与 [Cursor](https://cursor.com) / Claude Code **互补**：它们执行，MemoryAgent 记住你是谁、项目禁忌与决策。
+
+### 2. 本地可控、人类可读
+
+- 记忆 = **Markdown + YAML**，可用 Obsidian 直接改
+- 默认 **本地文件 + SQLite**，无强制云向量库
+- 可选 `MEMORYAGENT_API_KEY` 保护 HTTP 侧车
+
+### 3. 召回靠谱且可解释
+
+- **FTS + 持久向量 + Rerank**（候选 20 → Top5），长问句 **Query Rewrite**
+- 对话展示 **Memory Citation**（分数、类型、陈旧提示）
+- **L0→L1 证据链**：原子记忆可追溯到原会话片段（`memories/l0/`）
+- **Recall@5** 黄金集评估 + CI 门禁（目标 ≥90%）
+
+### 4. 接 Cursor 接近「零配置」
+
+```bash
+bash /path/to/MemoryAgent/scripts/install-sidecar.sh .
+```
+
+自动写入 `.cursor/mcp.json`、规则「每轮先 recall」、`user_id` / `project_id` 由 **工作区 + Git 仓库名** 推导。MCP v2：`recall` / `store` / `update` / `delete` / `list` / `export`。
+
+### 5. 上下文更省 Token（借鉴 Headroom / Tencent 思路）
+
+- **CCR 可逆压缩**：大段 tool 输出 落盘 + 类型化预览（JSON 骨架 / 代码截断），`memory_retrieve_blob` 按需取回
+- **Mermaid 符号化工作记忆**：多步 tool 时注入任务拓扑图
+- 五层 **ContextCompressor**，异步 **记忆沉淀**（不拖慢首包/尾包）
+
+### 6. 工程可验证
+
+400+ pytest、流式 SSE、多厂商 LLM 配置、架构决策文档化 → 适合二次开发与私有化部署。
 
 ---
 
@@ -53,12 +92,30 @@
 
 ### 🗜️ 智能上下文压缩
 
-5 步压缩策略，解决长对话"忘记前面说过什么"的问题：
-- 大结果存磁盘
-- 清理旧消息
-- 裁剪老工具输出
-- 上下文折叠（90% 阈值）
-- 全量摘要（95% 阈值）
+多层策略，兼顾 **省 Token** 与 **可恢复**：
+
+| 机制 | 作用 |
+|------|------|
+| CCR + ContentRouter | 大 tool/JSON/日志：预览进上下文，全文 `ccr_*` 落盘 |
+| Mermaid 任务图 | 多步 tool 时保留拓扑，细节按节点 ID 取回 |
+| 5 层 ContextCompressor | 磁盘卸载 → 裁剪 → 折叠 → 摘要 |
+| 异步 Observer | 对话后自动写入记忆，不阻塞流式 `done` |
+
+详见 [Headroom 思路对照](docs/headroom-integration.md)、[架构决策](docs/architecture-decision.md)。
+
+### 🔌 MCP 记忆侧车 v2
+
+| 工具 | 用途 |
+|------|------|
+| `memory_recall` | 按 query 召回（`user_id` 可省略） |
+| `memory_store` / `update` / `delete` | 沉淀与纠错 |
+| `memory_list` / `memory_export` | 浏览与 `prompt_block` 注入 |
+| `memory_retrieve_blob` | CCR 压缩后取回完整 tool 输出 |
+
+### 📊 质量可观测
+
+- `GET /api/memory/metrics` — Recall@5、误注入率、向量条数
+- `POST /api/memory/metrics/run-eval` — 重跑黄金集
 
 ### 📝 Obsidian 兼容
 
@@ -95,21 +152,20 @@ tags:
 
 ---
 
-## 为什么选择 MemoryAgent
+## 与常见方案对比
 
-MemoryAgent 是 **记忆侧车（Memory Sidecar）**，不是全能 coding agent。与 Cursor / Claude Code 搭配使用，或单独作为「越用越懂你」的本地助手。
+| 维度 | ChatGPT 记忆 | Cursor Rules | 仅向量记忆库 | **MemoryAgent** |
+|------|-------------|--------------|--------------|-----------------|
+| 跨会话偏好 | 黑盒 | 项目规则 | 碎片难检索 | ✅ 四类型结构化 |
+| 可编辑 | ❌ | 部分 | 难 | ✅ Markdown / Obsidian |
+| 召回可解释 | ❌ | 有限 | 弱 | ✅ Citation + L0 溯源 |
+| 接外部 Agent | ❌ | IDE 内置 | 需自建 | ✅ MCP + HTTP 侧车 |
+| 大上下文/tool 输出 | 提供商压缩 | 部分 | — | ✅ CCR + Mermaid + 五层压缩 |
+| 本地/隐私 | ❌ | 视配置 | 视部署 | ✅ 默认本地 |
+| 写代码/跑 CI | — | ✅ | — | ❌ 刻意不做 |
 
-| 维度 | ChatGPT 记忆 | Cursor Rules | MemoryAgent |
-|------|-------------|--------------|-------------|
-| 跨会话偏好 | 产品内黑盒 | 项目级规则 | ✅ 四类型用户模型 |
-| 记忆可编辑 | ❌ | 部分（规则文件） | ✅ Obsidian Markdown |
-| 本地/隐私 | ❌ | 视配置 | ✅ 默认本地文件 |
-| 召回可解释 | ❌ | 有限 | ✅ 显示用到的记忆 |
-| 接外部 Agent | ❌ | 内置 IDE | ✅ `/api/memory/export` + `/api/memory/recall` |
-| 写代码/跑终端 | — | ✅ | ❌（刻意不做，见 [架构决策](docs/architecture-decision.md)） |
-
-**适合**：需要长期一致偏好、禁忌、项目决策记录的用户。  
-**不适合**：替代 Cursor/Devin 完成修 bug、提 PR、跑 CI 等执行任务。
+**适合**：长期偏好、项目禁忌、可审计记忆、Cursor/Claude Code 用户。  
+**不适合**：替代 Devin/Cursor 完成端到端交付。
 
 ---
 
@@ -186,7 +242,7 @@ bash /path/to/MemoryAgent/scripts/install-sidecar.sh .
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    Agent Loop                              │   │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────────┐   │   │
-│  │  │ LLM调用 │→│ 工具执行 │→│ 记忆检索 │→│ 上下文压缩  │   │   │
+│  │  │ LLM调用 │→│ 工具执行 │→│ Hybrid召回 │→│ CCR+压缩   │   │   │
 │  │  └─────────┘ └─────────┘ └─────────┘ └─────────────┘   │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐      │
@@ -210,7 +266,9 @@ src/
 ├── memory/                  # 记忆系统
 │   ├── types/               # 四类型记忆定义
 │   ├── storage.py           # 文件存储 (markdown + YAML)
-│   ├── retrieval.py         # LLM-based 召回
+│   ├── retrieval.py         # Hybrid FTS + 向量 + Rerank
+│   ├── provenance.py        # L0 证据链
+│   ├── persistent_vector.py # 持久化向量
 │   ├── quality.py           # 记忆质量管理
 │   └── vector_store.py      # 向量搜索
 ├── skills/                  # 技能知识图谱
@@ -256,7 +314,7 @@ curl http://localhost:8000/api/memory/stats
 python -m pytest tests/ -v
 
 # 测试结果
-# 290+ passed, 7 skipped
+# 400+ passed, 7 skipped
 ```
 
 ---
@@ -269,7 +327,7 @@ python -m pytest tests/ -v
 | **后端** | Python 3.9, FastAPI, OpenAI SDK |
 | **记忆** | Markdown + YAML, SQLite, 向量搜索 |
 | **图谱** | networkx, tree-sitter |
-| **测试** | pytest, 290+ 测试用例 |
+| **测试** | pytest, 400+ 测试用例 |
 
 ---
 
@@ -291,13 +349,18 @@ python -m pytest tests/ -v
 
 ---
 
+## 相关文档
+
+- [架构决策](docs/architecture-decision.md) — 侧车边界与读写路径
+- [Cursor 接入](docs/cursor-integration.md) — 一条命令安装 MCP
+- [Headroom 思路对照](docs/headroom-integration.md) — CCR 与可选 proxy
+
 ## 致谢
 
-- [Claude Code](https://www.anthropic.com/) - 架构设计灵感
-- [FastAPI](https://fastapi.tiangolo.com/) - Web 框架
-- [Next.js](https://nextjs.org/) - 前端框架
-- [tree-sitter](https://tree-sitter.github.io/) - AST 解析
-- [networkx](https://networkx.org/) - 图数据库
+- [Claude Code](https://www.anthropic.com/) — Agent Loop / 记忆类型灵感
+- [TencentDB Agent Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory) — 分层记忆与证据链思路
+- [Headroom](https://github.com/chopratejas/headroom) — 可逆上下文压缩思路
+- [FastAPI](https://fastapi.tiangolo.com/) · [Next.js](https://nextjs.org/) · [tree-sitter](https://tree-sitter.github.io/) · [networkx](https://networkx.org/)
 
 ---
 

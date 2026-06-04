@@ -13,6 +13,7 @@ MCP 已配置时，`user_id` / `project_id` 由工作区目录名自动推导（
 2. **回答时**：只引用 recall 结果；标记陈旧的记忆先核实。
 3. **回答后**：用户明确偏好/禁忌/项目决策/链接 → `memory_store`（`user` | `feedback` | `project` | `reference`）。
 4. 需要整段上下文：`memory_export` → 使用返回的 `prompt_block`。
+5. 看到 `ref=ccr_…`：`memory_retrieve_blob(ref_id)` 取回完整 tool 输出。
 
 ## 安装（本仓库未装时）
 

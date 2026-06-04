@@ -41,6 +41,12 @@ Coding agents (Cursor, Claude Code, Devin) optimize **Act + Perceive**. MemoryAg
 | HTTP sidecar | Same ops + `PATCH /api/memories/{id}`, `GET /api/memory/audit` (optional `MEMORYAGENT_API_KEY`) |
 | Custom frontend | Next.js UI + `POST /api/chat/stream` (OpenAI token streaming when no tools) |
 
+## Headroom-inspired (CCR + ContentRouter)
+
+- 大 tool 输出：`content_router` 分类型压缩 + `ccr_blobs/` 可逆存储
+- MCP：`memory_retrieve_blob(ref_id)` 取回全文
+- 可选外挂 [Headroom](https://github.com/chopratejas/headroom) proxy — 见 `docs/headroom-integration.md`
+
 ## Tencent-inspired (D 方案)
 
 - **L0→L1 证据链**：`memories/l0/{user}/` jsonl 原话 + L1 记忆 frontmatter 溯源字段；citation 透传 `source_quote` / `source_session_id`

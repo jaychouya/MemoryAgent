@@ -101,6 +101,15 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "memory_retrieve_blob",
+        "description": "Retrieve full offloaded tool/log blob by ccr_ ref id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"ref_id": {"type": "string"}},
+            "required": ["ref_id"],
+        },
+    },
 ]
 
 _HANDLERS: Dict[str, Callable] = {}
@@ -163,6 +172,13 @@ def _register_handlers(storage_dir: str):
             project_id=pid,
         ))
 
+    async def memory_retrieve_blob(args: dict) -> str:
+        from src.mcp_server.blob_tools import retrieve_blob_tool
+
+        return format_tool_json(
+            await retrieve_blob_tool(args["ref_id"], storage_dir)
+        )
+
     _HANDLERS.update({
         "memory_recall": memory_recall,
         "memory_store": memory_store,
@@ -170,6 +186,7 @@ def _register_handlers(storage_dir: str):
         "memory_delete": memory_delete,
         "memory_list": memory_list,
         "memory_export": memory_export,
+        "memory_retrieve_blob": memory_retrieve_blob,
     })
 
 

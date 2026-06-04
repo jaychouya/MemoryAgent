@@ -108,36 +108,27 @@ class ContextCompressor:
         return total_chars // 4  # Rough estimate: 4 chars per token
     
     async def _layer1_large_results(self, messages: List[Dict]) -> List[Dict]:
-        """
-        Layer 1: Store large tool results to disk.
-        
-        - Tool results > 50KB stored to disk
-        - Keep 2KB preview in message
-        - Zero info loss (full content on disk)
-        """
-        import os
-        
-        os.makedirs(self.file_storage_dir, exist_ok=True)
-        
+        """Layer 1: CCR offload + content-type-aware preview (Headroom-inspired)."""
+        from src.utils.config import settings
+        from src.agent.ccr_store import compress_with_ccr
+
         modified = []
         for msg in messages:
-            if msg.get("role") == "tool":
+            if msg.get("role") == "tool" and settings.CCR_ENABLED:
                 content = str(msg.get("content", ""))
-                if len(content) > self.LARGE_RESULT_THRESHOLD:
-                    # Store to disk
-                    import hashlib
-                    file_id = hashlib.md5(content.encode()).hexdigest()[:12]
-                    file_path = os.path.join(self.file_storage_dir, f"tool_{file_id}.txt")
-                    
-                    with open(file_path, "w") as f:
-                        f.write(content)
-                    
-                    # Replace with preview
-                    preview = content[:2048] + f"\n\n[...完整内容已保存到 {file_path}]"
+                threshold = min(
+                    self.LARGE_RESULT_THRESHOLD,
+                    settings.CCR_OFFLOAD_THRESHOLD,
+                )
+                if len(content) > threshold:
+                    preview, _, _ = compress_with_ccr(
+                        content,
+                        settings.CCR_STORAGE_DIR,
+                        settings.CCR_OFFLOAD_THRESHOLD,
+                        settings.CCR_PREVIEW_CHARS,
+                    )
                     msg = {**msg, "content": preview}
-            
             modified.append(msg)
-        
         return modified
     
     def _layer2_snip_old(self, messages: List[Dict]) -> List[Dict]:
