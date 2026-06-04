@@ -1,3 +1,4 @@
+"""Redis working-memory layer (deferred — not wired to chat/MemoryManager)."""
 import json
 import logging
 from typing import List, Optional
@@ -10,7 +11,9 @@ logger = logging.getLogger(__name__)
 
 class WorkingMemory:
     """
-    Working Memory Layer - Current session context.
+    Working Memory Layer - Current session context (library/tests only).
+    
+    Runtime chat uses `sessions/*.json` + Markdown MemoryManager instead.
     
     Human analogy: What you're thinking about right now.
     

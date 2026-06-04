@@ -1,11 +1,13 @@
 import tempfile
 import shutil
+import uuid
 from pathlib import Path
 
 import pytest
 
 from src.memory.manager import MemoryManager
-from src.memory.observer import MemoryObserver, extract_candidates
+from src.memory.observer import MemoryObserver
+from src.memory.auto_write import extract_candidates
 
 
 def test_extract_candidates():
@@ -19,13 +21,14 @@ async def test_observer_stores_preference():
     try:
         mgr = MemoryManager(storage_dir=str(Path(tmp) / "memories"))
         obs = MemoryObserver(mgr)
+        tag = uuid.uuid4().hex[:8]
         ids = await obs.observe_turn(
-            "我喜欢 Kotlin 编程",
+            f"我喜欢 Kotlin 编程 {tag}",
             "好的记住了",
-            user_id="obs_user",
+            user_id=f"obs_user_{tag}",
         )
         assert len(ids) >= 1
-        results = await mgr.retrieve(query="编程语言", user_id="obs_user", top_k=5)
+        results = await mgr.retrieve(query="Kotlin", user_id=f"obs_user_{tag}", top_k=5)
         text = " ".join(r.get("content", "") for r in results)
         assert "Kotlin" in text
     finally:

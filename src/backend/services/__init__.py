@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable, Awaitable
 import os
 
 logger = logging.getLogger(__name__)
@@ -108,7 +108,7 @@ class LLMService:
                     })
             
             return result
-            
+
         except Exception as e:
             logger.error(f"LLM generation error: {e}")
             error_msg = str(e)
@@ -122,6 +122,94 @@ class LLMService:
                 return self._fallback_response(message, is_configured=True, error=f"模型 '{self.model}' 不存在，请检查模型名称是否正确。")
             else:
                 return self._fallback_response(message, is_configured=True, error=f"AI服务出错: {error_msg[:100]}")
+
+    async def generate_response_stream(
+        self,
+        message: str = None,
+        messages: List[Dict[str, str]] = None,
+        context: List[Dict[str, str]] = None,
+        system_prompt: str = None,
+        tools: List[Dict] = None,
+        on_token: Optional[Callable[[str], Awaitable[None]]] = None,
+    ) -> Dict[str, Any]:
+        if tools:
+            return await self.generate_response(
+                message=message,
+                messages=messages,
+                context=context,
+                system_prompt=system_prompt,
+                tools=tools,
+            )
+        if not self.client:
+            msg = message or ""
+            if messages:
+                for m in messages:
+                    if m.get("role") == "user":
+                        msg = m.get("content", "")
+                        break
+            content = self._fallback_response(msg, is_configured=False)
+            if on_token:
+                for ch in content:
+                    await on_token(ch)
+            return {"content": content, "stop_reason": "end_turn", "streamed": True}
+
+        api_messages = []
+        if system_prompt:
+            api_messages.append({"role": "system", "content": system_prompt})
+        else:
+            api_messages.append({
+                "role": "system",
+                "content": "你是MemoryAI，一个专业的AI助手。请用中文简洁回答。",
+            })
+        if messages:
+            api_messages.extend(messages)
+        elif context:
+            api_messages.extend(context)
+            api_messages.append({"role": "user", "content": message})
+        else:
+            api_messages.append({"role": "user", "content": message})
+
+        try:
+            stream = await self.client.chat.completions.create(
+                model=self.model,
+                messages=api_messages,
+                temperature=0.7,
+                max_tokens=4000,
+                stream=True,
+            )
+            parts: List[str] = []
+            finish_reason = "end_turn"
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+                delta = choice.delta.content or ""
+                if delta:
+                    parts.append(delta)
+                    if on_token:
+                        await on_token(delta)
+            content = self._clean_markdown("".join(parts))
+            return {
+                "content": content,
+                "stop_reason": finish_reason,
+                "streamed": True,
+            }
+        except Exception as e:
+            logger.error(f"LLM stream error: {e}")
+            fallback = self.generate_response(
+                message=message,
+                messages=messages,
+                context=context,
+                system_prompt=system_prompt,
+            )
+            return await self.generate_response(
+                message=message,
+                messages=messages,
+                context=context,
+                system_prompt=system_prompt,
+            )
     
     def _fallback_response(self, message: str, is_configured: bool = False, error: str = None) -> str:
         message_lower = message.lower()

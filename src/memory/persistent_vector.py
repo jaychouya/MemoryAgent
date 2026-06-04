@@ -7,12 +7,13 @@ from typing import List, Optional, Dict, Any
 
 import numpy as np
 
-from src.memory.embeddings import local_embed
+from src.memory.embeddings import embed_text, local_embed
+from src.utils.config import settings
 from src.memory.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
-EMBED_DIM = 384
+EMBED_DIM = settings.EMBEDDING_DIMENSIONS or 384
 
 
 def _blob_from_embedding(embedding: List[float]) -> bytes:
@@ -62,7 +63,7 @@ class PersistentVectorStore:
         memory_type: str = "user",
         embedding: List[float] = None,
     ):
-        emb = embedding or local_embed(content)
+        emb = embedding or embed_text(content)
         blob = _blob_from_embedding(emb)
         with self._conn() as conn:
             conn.execute(

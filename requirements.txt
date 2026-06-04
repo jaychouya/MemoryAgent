@@ -7,8 +7,14 @@ pydantic-settings==2.1.0
 # LLM
 openai==1.12.0
 
+# MCP sidecar (optional; Python 3.10+ — falls back to stdlib stdio server)
+mcp>=1.2.0; python_version >= "3.10"
+
 # Database
 redis==5.0.1
+sqlalchemy[asyncio]==2.0.25
+greenlet==3.0.3
+python-multipart==0.0.6
 
 # AST Parsing (for semantic patch)
 tree-sitter==0.23.2

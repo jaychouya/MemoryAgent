@@ -18,6 +18,8 @@ from src.memory.storage import MemoryStorage
 from src.memory.retrieval import MemoryRetrieval
 from src.memory.persistent_vector import PersistentVectorStore
 from src.memory.exclusions import should_exclude, get_exclusion_reason
+from src.memory.embeddings import embed_text
+from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,8 @@ class MemoryManager:
     ):
         self.storage_dir = storage_dir
         db_path = str(Path(storage_dir) / "index.db")
-        self.persistent_vectors = PersistentVectorStore(db_path)
+        dim = settings.EMBEDDING_DIMENSIONS or 384
+        self.persistent_vectors = PersistentVectorStore(db_path, dimension=dim)
         self.vector_store = self.persistent_vectors.get_vector_store()
         self.storage = MemoryStorage(storage_dir)
         self.retrieval = MemoryRetrieval(
@@ -100,6 +103,7 @@ class MemoryManager:
                 content=memory.content,
                 user_id=uid,
                 memory_type=memory.type.value,
+                embedding=embed_text(memory.content),
             )
             return memory
         return None
@@ -109,12 +113,59 @@ class MemoryManager:
         if ok:
             self.persistent_vectors.delete(memory_id)
         return ok
+
+    async def update_memory(
+        self,
+        memory_id: str,
+        content: str = None,
+        description: str = None,
+    ) -> bool:
+        ok = await self.storage.update(memory_id, content=content, description=description)
+        if ok:
+            mem = await self.storage.retrieve(memory_id)
+            if mem:
+                self.persistent_vectors.upsert(
+                    memory_id=mem.id,
+                    content=mem.content,
+                    user_id=mem.metadata.get("user_id"),
+                    memory_type=mem.type.value,
+                    embedding=embed_text(mem.content),
+                )
+        return ok
+
+    async def list_memories(
+        self,
+        user_id: str,
+        project_id: str = None,
+        memory_type: str = None,
+        limit: int = 20,
+    ) -> List[Dict]:
+        rows = self.storage.index.search(
+            query="",
+            user_id=user_id,
+            memory_type=memory_type,
+            project_id=project_id,
+            limit=limit * 2,
+        )
+        out = []
+        for row in rows:
+            uid = row.get("user_id")
+            mid = row.get("memory_id") or ""
+            if uid != user_id and not str(mid).startswith(f"{user_id}_"):
+                continue
+            pid = row.get("project_id")
+            if project_id and pid and pid != project_id:
+                continue
+            row["project_id"] = pid
+            out.append(row)
+        return out[:limit]
     
     async def retrieve(
         self,
         query: str,
         user_id: str = None,
         session_id: str = None,
+        project_id: str = None,
         top_k: int = 5
     ) -> List[Dict]:
         """
@@ -129,11 +180,13 @@ class MemoryManager:
         Returns:
             List of memory dicts with content and metadata
         """
-        return await self.retrieval.retrieve(
+        results = await self.retrieval.retrieve(
             query=query,
             user_id=user_id,
-            limit=top_k
+            project_id=project_id,
+            limit=top_k,
         )
+        return results
     
     async def store_user_preference(
         self,

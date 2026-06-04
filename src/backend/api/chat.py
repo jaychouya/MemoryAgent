@@ -9,7 +9,9 @@ from datetime import datetime
 from pathlib import Path
 
 from src.backend.services import get_llm_service, LLMService
-from src.agent.loop import AgentLoop
+from src.agent.loop import AgentLoop, AgentResult, AgentState, StopReason, _REASON_MAP
+from src.agent.query_loop import LoopEventType
+from src.agent.loop_state import LoopExitReason, LoopState
 from src.agent.streaming import StreamingManager, StreamEvent, StreamEventType
 from src.agent.tools.registry import get_tool_registry, ToolRegistry
 from src.agent.tools.builtin import MemorySearchTool, MemoryStoreTool, ContextRetrieveTool
@@ -21,6 +23,7 @@ from src.agent.plans import (
     CreatePlanTool
 )
 from src.memory.manager import MemoryManager
+from src.memory.service import get_shared_memory_manager
 from src.memory.observer import MemoryObserver
 from src.memory.citations import MemoryCitation
 from src.skills.graph import SkillGraph
@@ -82,6 +85,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=10000)
     session_id: str = Field(default="default")
     user_id: str = Field(default="anonymous")
+    project_id: Optional[str] = Field(default=None, description="Repo/project scope for memories")
     llm_config: Optional[ModelConfigRequest] = None
 
 
@@ -107,6 +111,11 @@ class MemoryCitationResponse(BaseModel):
     age_days: int
     is_stale: bool
     selection_reason: str
+    evidence_level: str = "L1"
+    source_session_id: str = ""
+    source_turn: int = 0
+    source_quote: str = ""
+    l0_path: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -122,7 +131,7 @@ def get_agent_loop(llm_service) -> AgentLoop:
         # 重置工具注册表，避免重复注册
         _tool_registry = ToolRegistry()
         
-        _memory_manager = MemoryManager(llm_service=llm_service)
+        _memory_manager = get_shared_memory_manager(llm_service=llm_service)
         _skill_graph = SkillGraph()
         _tracer = ExecutionTracer()
         
@@ -236,24 +245,86 @@ def _memory_updates_from_result(result) -> List[MemoryUpdate]:
     return updates
 
 
-async def _run_observer(request: ChatRequest, result):
+def _chat_scope(request: ChatRequest):
+    from src.mcp_server.workspace import effective_chat_scope
+
+    user_id, project_id = effective_chat_scope(request.user_id, request.project_id)
+    return user_id, project_id, f"{user_id}:{request.session_id}"
+
+
+async def _run_observer(
+    request: ChatRequest,
+    result,
+    user_id: str = None,
+    project_id: str = None,
+):
     global _memory_manager
     if not _memory_manager or not result.state:
         return
+    uid = user_id or request.user_id
+    pid = project_id if project_id is not None else request.project_id
     try:
         observer = MemoryObserver(_memory_manager)
         await observer.observe_turn(
             user_message=request.message,
             assistant_message=result.content or "",
-            user_id=request.user_id,
+            user_id=uid,
             session_id=request.session_id,
+            project_id=pid,
         )
     except Exception as e:
         logger.warning(f"Memory observer failed: {e}")
 
 
+def _schedule_observer(
+    request: ChatRequest, result, user_id: str = None, project_id: str = None
+) -> None:
+    from src.utils.config import settings
+
+    if not settings.MEMORY_OBSERVER_ASYNC:
+        return
+    asyncio.create_task(_run_observer(request, result, user_id, project_id))
+
+
+async def _await_observer_if_sync(
+    request: ChatRequest, result, user_id: str = None, project_id: str = None
+) -> None:
+    from src.utils.config import settings
+
+    if settings.MEMORY_OBSERVER_ASYNC:
+        _schedule_observer(request, result, user_id, project_id)
+    else:
+        await _run_observer(request, result, user_id, project_id)
+
+
+def _agent_result_from_loop_out(loop_out: dict) -> AgentResult:
+    loop_state = loop_out.get("state")
+    if loop_state is None:
+        loop_state = LoopState()
+    exit_reason = loop_out.get("exit_reason", LoopExitReason.ERROR)
+    content = loop_out.get("content", "") or ""
+    stop = _REASON_MAP.get(exit_reason, StopReason.ERROR)
+    state = AgentState(
+        messages=loop_state.messages,
+        turn_count=loop_state.turn_count,
+        tokens_used=loop_state.tokens_used,
+        tools_called=loop_state.tools_called,
+        memories_used=loop_state.memories_used,
+        memory_citations=loop_state.memory_citations,
+        is_plan_mode=loop_state.is_plan_mode,
+        has_attempted_reactive_compact=loop_state.has_attempted_reactive_compact,
+        output_recovery_count=loop_state.output_recovery_count,
+    )
+    return AgentResult(
+        content=content,
+        stop_reason=stop,
+        state=state,
+        metadata={"exit_reason": exit_reason.value if hasattr(exit_reason, "value") else str(exit_reason)},
+    )
+
+
 async def _execute_chat(request: ChatRequest):
-    session_key = f"{request.user_id}:{request.session_id}"
+    user_id, project_id, session_key = _chat_scope(request)
     if session_key not in sessions:
         sessions[session_key] = []
     llm = _resolve_llm(request)
@@ -262,10 +333,11 @@ async def _execute_chat(request: ChatRequest):
         user_message=request.message,
         context_messages=sessions[session_key],
         session_id=request.session_id,
-        user_id=request.user_id,
+        user_id=user_id,
+        project_id=project_id,
     )
     _persist_session(session_key, request, result)
-    await _run_observer(request, result)
+    await _await_observer_if_sync(request, result, user_id, project_id)
     return result
 
 
@@ -299,34 +371,56 @@ async def chat(request: ChatRequest):
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
+    user_id, project_id, session_key = _chat_scope(request)
+
     async def event_generator() -> AsyncGenerator[str, None]:
         streamer = StreamingManager()
+        if session_key not in sessions:
+            sessions[session_key] = []
+        loop_out: Dict[str, Any] = {}
         try:
-            result = await _execute_chat(request)
+            llm = _resolve_llm(request)
+            agent = get_agent_loop(llm)
+            async for loop_ev in agent.run_stream(
+                user_message=request.message,
+                context_messages=sessions[session_key],
+                session_id=request.session_id,
+                user_id=user_id,
+                project_id=project_id,
+                loop_out=loop_out,
+            ):
+                if loop_ev.type == LoopEventType.TOKEN:
+                    yield streamer.create_token_event(loop_ev.content).to_sse()
+                elif loop_ev.type == LoopEventType.TOOL_CALL:
+                    yield streamer.create_tool_call_event(
+                        loop_ev.content,
+                        loop_ev.metadata or {},
+                    ).to_sse()
+                elif loop_ev.type == LoopEventType.TOOL_RESULT:
+                    yield streamer.create_tool_result_event(
+                        loop_ev.metadata.get("tool_name", "tool"),
+                        "error" if loop_ev.metadata.get("is_error") else "completed",
+                    ).to_sse()
+                elif loop_ev.type == LoopEventType.ERROR:
+                    yield streamer.create_error_event(loop_ev.content).to_sse()
 
-            if result.state:
-                for tool_name in result.state.tools_called:
-                    evt = streamer.create_tool_result_event(tool_name, "completed")
-                    yield evt.to_sse()
-                citations = _citations_from_result(result)
-                for cit in citations:
-                    meta_evt = StreamEvent(
-                        type=StreamEventType.TOOL_RESULT,
-                        content=cit.content_snippet[:200],
-                        metadata={"source": "memory", "citation": cit.model_dump()},
-                    )
-                    yield meta_evt.to_sse()
+            result = _agent_result_from_loop_out(loop_out)
+            _persist_session(session_key, request, result)
+            await _await_observer_if_sync(request, result, user_id, project_id)
 
-            content = result.content or ""
-            chunk_size = 32
-            for i in range(0, len(content), chunk_size):
-                yield streamer.create_token_event(content[i : i + chunk_size]).to_sse()
-                await asyncio.sleep(0)
+            for cit in _citations_from_result(result):
+                meta_evt = StreamEvent(
+                    type=StreamEventType.TOOL_RESULT,
+                    content=cit.content_snippet[:200],
+                    metadata={"source": "memory", "citation": cit.model_dump()},
+                )
+                yield meta_evt.to_sse()
 
             done = streamer.create_done_event()
             done.metadata["citations"] = [
                 c.model_dump() for c in _citations_from_result(result)
             ]
+            done.metadata["response"] = result.content
             yield done.to_sse()
         except Exception as e:
             logger.error(f"Stream chat error: {e}", exc_info=True)

@@ -10,6 +10,9 @@
     {"store": "后端使用 FastAPI", "query": "后端框架", "expect_contains": ["FastAPI"]},
     {"store": "不要使用 any 类型", "query": "TypeScript 规范", "expect_contains": ["any"]},
     {"store": "用户讨厌冗长的免责声明", "query": "回复格式", "expect_contains": ["讨厌"]},
-    {"store": "记住：代码注释用中文", "query": "注释语言", "expect_contains": ["中文"]}
+    {"store": "记住：代码注释用中文", "query": "注释语言", "expect_contains": ["中文"]},
+    {"store_noise": "用户养了三只猫叫咪咪", "store_signal": "用户熟悉 Kubernetes 与 Helm 部署", "query": "Kubernetes 部署步骤", "expect_excludes": ["猫", "咪咪"], "signal_markers": ["Kubernetes", "Helm"], "decoy": true},
+    {"store_noise": "周末去打高尔夫球", "store_signal": "用户常用 Python asyncio 写后端", "query": "Python 异步编程", "expect_excludes": ["高尔夫"], "signal_markers": ["Python", "asyncio"], "decoy": true},
+    {"store_noise": "最喜欢的电影是泰坦尼克号", "store_signal": "用户用 FastAPI 设计 REST 路由", "query": "FastAPI 路由设计", "expect_excludes": ["泰坦尼克", "电影"], "signal_markers": ["FastAPI", "REST"], "decoy": true}
   ]
 }

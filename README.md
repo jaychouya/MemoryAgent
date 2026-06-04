@@ -8,7 +8,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.1-black.svg)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-290+-brightgreen.svg)](#测试)
+[![Tests](https://img.shields.io/badge/Tests-370+-brightgreen.svg)](#测试)
 
 **每次开新对话都要重新介绍自己？MemoryAgent 让 AI 记住你的偏好，越用越懂你。**
 
@@ -150,15 +150,27 @@ python src/main.py
 
 访问 http://localhost:3000，点击「配置」按钮设置 API Key。
 
+### 方式三：Cursor / Claude Code 侧车（一条命令）
+
+在**你的业务项目**目录执行（将路径换成本仓库位置）：
+
+```bash
+bash /path/to/MemoryAgent/scripts/install-sidecar.sh .
+```
+
+自动写入 `.cursor/mcp.json`、规则「每轮先 `memory_recall` 再回答」、记忆目录 `.memoryagent/memories/`。`user_id` / `project_id` 由工作区与 **Git 仓库名** 自动推导。详见 [Cursor 接入](docs/cursor-integration.md)。
+
 ### 系统要求
 
-- Python 3.9+
+- Python 3.11+
 - Node.js 18+
 - 网络连接（用于 API 调用）
 
 ---
 
 ## 架构设计
+
+**运行时主路径**：会话历史 `sessions/*.json` + 长期记忆 `memories/*.md` + `index.db`（FTS + 持久向量）。`src/memory/layers/` 下 Redis/PostgreSQL 实现仅用于测试与未来扩展，见 [架构决策](docs/architecture-decision.md)。
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐

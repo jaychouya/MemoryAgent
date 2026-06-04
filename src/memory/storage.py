@@ -85,7 +85,8 @@ class MemoryStorage:
                     content=memory.content,
                     memory_type=memory.type.value,
                     user_id=memory.metadata.get("user_id"),
-                    importance=importance
+                    importance=importance,
+                    project_id=memory.metadata.get("project_id"),
                 )
             else:
                 # 多块：分块存储
@@ -108,7 +109,8 @@ class MemoryStorage:
                         content=chunk,
                         memory_type=memory.type.value,
                         user_id=memory.metadata.get("user_id"),
-                        importance=importance
+                        importance=importance,
+                        project_id=memory.metadata.get("project_id"),
                     )
             
             # 更新 MEMORY.md 索引
@@ -198,6 +200,33 @@ class MemoryStorage:
         results.sort(key=lambda m: m.updated_at, reverse=True)
         return results[:limit]
     
+    async def update(
+        self,
+        memory_id: str,
+        content: str = None,
+        description: str = None,
+    ) -> bool:
+        memory = await self.retrieve(memory_id)
+        if not memory:
+            return False
+        if content is not None:
+            memory.content = content
+        if description is not None:
+            memory.description = description
+        memory.touch()
+        file_path = self._get_file_path(memory)
+        file_path.write_text(memory.to_markdown(), encoding="utf-8")
+        importance = self.scorer.score(memory.content, memory.type.value)
+        self.index.add(
+            memory_id=memory.id,
+            content=memory.content,
+            memory_type=memory.type.value,
+            user_id=memory.metadata.get("user_id"),
+            importance=importance,
+            project_id=memory.metadata.get("project_id"),
+        )
+        return True
+
     async def delete(self, memory_id: str) -> bool:
         """
         Delete a memory.
@@ -212,6 +241,7 @@ class MemoryStorage:
             file_path = self.base_dir / memory_type.value / f"{memory_id}.md"
             if file_path.exists():
                 file_path.unlink()
+                self.index.delete(memory_id)
                 await self._remove_from_index(memory_id)
                 logger.info(f"Deleted memory: {memory_id}")
                 return True

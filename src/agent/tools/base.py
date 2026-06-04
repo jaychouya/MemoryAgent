@@ -134,12 +134,14 @@ class ReadOnlyTool(BaseTool):
     """Convenience base class for read-only tools."""
     permission = ToolPermission.READ_ONLY
     requires_confirmation = False
+    can_run_parallel = True
 
 
 class ReadWriteTool(BaseTool):
     """Convenience base class for read-write tools."""
     permission = ToolPermission.READ_WRITE
     requires_confirmation = False
+    can_run_parallel = False
 
 
 class DestructiveTool(BaseTool):

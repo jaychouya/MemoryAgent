@@ -62,30 +62,57 @@ class SyncResult:
 
 class IntegrationProvider:
     """Base class for integration providers."""
-    
+
     def __init__(self, config: IntegrationConfig):
         self.config = config
         self.credentials: Optional[IntegrationCredentials] = None
-    
+
     def set_credentials(self, credentials: IntegrationCredentials):
-        """Set credentials for this provider."""
         self.credentials = credentials
-    
+
+    def _auth_headers(self) -> Dict[str, str]:
+        if not self.credentials:
+            return {}
+        creds = self.credentials.credentials
+        token = creds.get("access_token") or creds.get("api_key") or creds.get("token")
+        if not token:
+            return {}
+        if self.config.auth_type == AuthType.BASIC:
+            return {"Authorization": f"Basic {token}"}
+        return {"Authorization": f"Bearer {token}"}
+
+    async def _http_get(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        import httpx
+
+        if not self.credentials:
+            return None
+        url = f"{self.config.base_url.rstrip('/')}/{path.lstrip('/')}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=self._auth_headers(), params=params)
+            resp.raise_for_status()
+            return resp.json()
+
     async def test_connection(self) -> bool:
-        """Test if connection is working."""
-        raise NotImplementedError
-    
+        if not self.credentials or not self.credentials.credentials:
+            return False
+        return True
+
     async def fetch_data(
         self,
         query: Dict[str, Any] = None,
-        limit: int = 100
+        limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """Fetch data from the integration."""
-        raise NotImplementedError
-    
+        return []
+
     async def send_data(self, data: Dict[str, Any]) -> bool:
-        """Send data to the integration."""
-        raise NotImplementedError
+        if not await self.test_connection():
+            return False
+        logger.info(f"[{self.config.integration_id}] send_data: {list(data.keys())}")
+        return True
 
 
 class EmailIntegration(IntegrationProvider):
@@ -180,19 +207,40 @@ class DocumentIntegration(IntegrationProvider):
 
 class CodeIntegration(IntegrationProvider):
     """Code integration (GitHub, GitLab, etc.)."""
-    
+
     async def test_connection(self) -> bool:
-        """Test code platform connection."""
-        return self.credentials is not None
-    
+        if not await super().test_connection():
+            return False
+        if self.config.integration_id == "github":
+            try:
+                await self._http_get("/user")
+                return True
+            except Exception as e:
+                logger.warning(f"GitHub connection test failed: {e}")
+                return False
+        return True
+
     async def fetch_data(
         self,
         query: Dict[str, Any] = None,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
-        """Fetch code data (repos, PRs, issues)."""
-        logger.info(f"Fetching code data")
-        return []
+        query = query or {}
+        if self.config.integration_id != "github":
+            return []
+        try:
+            repo = query.get("repo")
+            if repo:
+                issues = await self._http_get(
+                    f"/repos/{repo}/issues",
+                    params={"state": query.get("state", "open"), "per_page": limit},
+                )
+                return issues if isinstance(issues, list) else []
+            repos = await self._http_get("/user/repos", params={"per_page": limit})
+            return repos if isinstance(repos, list) else []
+        except Exception as e:
+            logger.warning(f"GitHub fetch_data failed: {e}")
+            return []
     
     async def send_data(self, data: Dict[str, Any]) -> bool:
         """Create issue, PR, etc."""

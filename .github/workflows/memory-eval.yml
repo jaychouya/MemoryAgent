@@ -1,0 +1,20 @@
+name: Memory Eval
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  recall-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Recall@5 gate (golden set)
+        env:
+          RECALL_EVAL_MIN: "0.9"
+        run: python3 -m pytest tests/test_recall_eval.py tests/test_rerank.py tests/test_store_schema.py tests/test_write_pipeline.py tests/test_mcp_crud.py tests/test_mcp_tools.py -q --tb=short

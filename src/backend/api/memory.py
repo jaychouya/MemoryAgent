@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 import logging
 from pathlib import Path
 
@@ -75,31 +75,46 @@ def read_memory_file(file_path: Path) -> Optional[Dict]:
         return None
 
 
+def _rows_for_user(rows: List[Dict], user_id: str) -> List[Dict]:
+    filtered = []
+    for row in rows:
+        uid = row.get("user_id")
+        mid = row.get("memory_id") or row.get("id") or ""
+        if uid == user_id or str(mid).startswith(f"{user_id}_"):
+            filtered.append(row)
+    return filtered
+
+
 @router.get("/memories", response_model=List[MemoryResponse])
 async def list_memories(
     user_id: str = Query(..., description="User identifier"),
     layer: Optional[str] = Query(None, description="Memory layer filter"),
     limit: int = Query(20, ge=1, le=100)
 ):
-    """List memories for a user."""
+    """List memories for a user (index-backed, user-scoped)."""
+    from src.memory.service import get_shared_memory_manager
+
+    manager = get_shared_memory_manager()
+    rows = manager.storage.index.search(
+        query="",
+        user_id=user_id,
+        memory_type=layer,
+        limit=limit * 3,
+    )
+    rows = _rows_for_user(rows, user_id)[:limit]
+
     memories = []
-    
-    if layer:
-        type_dirs = [MEMORIES_DIR / layer]
-    else:
-        type_dirs = [d for d in MEMORIES_DIR.iterdir() if d.is_dir()]
-    
-    for type_dir in type_dirs:
-        if not type_dir.exists():
-            continue
-        
-        for memory_file in type_dir.glob("*.md"):
-            memory_data = read_memory_file(memory_file)
-            if memory_data:
-                memories.append(MemoryResponse(**memory_data))
-    
-    memories.sort(key=lambda m: m.created_at, reverse=True)
-    return memories[:limit]
+    for row in rows:
+        memories.append(
+            MemoryResponse(
+                memory_id=row.get("memory_id") or row.get("id", ""),
+                content=(row.get("content") or "")[:200],
+                layer=row.get("memory_type", "user"),
+                created_at=str(row.get("created_at", "")),
+                metadata={"user_id": user_id},
+            )
+        )
+    return memories
 
 
 @router.get("/memory/stats", response_model=MemoryStatsResponse)
@@ -123,48 +138,64 @@ async def get_memory_stats():
 async def export_memories_for_sidecar(
     user_id: str = Query(..., description="User identifier"),
     query: Optional[str] = Query(None, description="Optional recall query"),
+    project_id: Optional[str] = Query(None),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Export memories for IDE sidecar / MCP clients."""
-    from src.memory.manager import MemoryManager
-
-    manager = MemoryManager()
-    if query:
-        items = await manager.retrieve(query=query, user_id=user_id, top_k=limit)
-    else:
-        items = await manager.storage.index.search(query="", user_id=user_id, limit=limit)
-
-    return {
-        "user_id": user_id,
-        "count": len(items),
-        "memories": items,
-        "format": "memoryagent-sidecar-v1",
-    }
+    from src.mcp_server.tools import export_memories
+    return await export_memories(
+        user_id=user_id, query=query, limit=limit, project_id=project_id
+    )
 
 
 @router.post("/memory/recall")
 async def recall_memories_sidecar(body: dict):
-    """MCP-friendly recall endpoint for external agents."""
-    from src.memory.manager import MemoryManager
+    from src.mcp_server.tools import recall_memories
+    return await recall_memories(
+        user_id=body.get("user_id", "anonymous"),
+        query=body.get("query", ""),
+        limit=int(body.get("limit", 5)),
+        project_id=body.get("project_id"),
+    )
 
+
+@router.patch("/memories/{memory_id}")
+async def update_memory_endpoint(memory_id: str, body: dict):
+    from src.mcp_server.tools import update_memory
     user_id = body.get("user_id", "anonymous")
-    query = body.get("query", "")
-    limit = int(body.get("limit", 5))
-    manager = MemoryManager()
-    items = await manager.retrieve(query=query, user_id=user_id, top_k=limit)
-    prompt_block = await manager.format_for_prompt(query, user_id)
-    return {
-        "memories": items,
-        "prompt_block": prompt_block,
-    }
+    result = await update_memory(
+        memory_id=memory_id,
+        user_id=user_id,
+        content=body.get("content"),
+        description=body.get("description"),
+    )
+    if not result.get("updated"):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return result
+
+
+@router.get("/memory/audit")
+async def get_memory_audit(limit: int = Query(50, ge=1, le=500)):
+    from pathlib import Path
+    import json
+    path = Path(".memoryai/audit.jsonl")
+    if not path.exists():
+        return {"events": []}
+    lines = path.read_text(encoding="utf-8").strip().split("\n")
+    events = []
+    for line in lines[-limit:]:
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return {"events": events}
 
 
 @router.get("/memory/metrics")
 async def get_memory_metrics(user_id: str = Query(default="eval_user")):
     from src.memory.eval import get_last_report
-    from src.memory.manager import MemoryManager
+    from src.memory.service import get_shared_memory_manager
 
-    manager = MemoryManager()
+    manager = get_shared_memory_manager()
     stats = await manager.get_stats()
     report = get_last_report()
     payload = {
@@ -180,9 +211,9 @@ async def get_memory_metrics(user_id: str = Query(default="eval_user")):
 @router.post("/memory/metrics/run-eval")
 async def run_memory_eval():
     from src.memory.eval import run_recall_eval, GOLDEN_PATH
-    from src.memory.manager import MemoryManager
+    from src.memory.service import get_shared_memory_manager
 
-    manager = MemoryManager()
+    manager = get_shared_memory_manager()
     try:
         report = await run_recall_eval(manager, fixture_path=GOLDEN_PATH)
     except FileNotFoundError:
@@ -191,11 +222,12 @@ async def run_memory_eval():
 
 
 @router.delete("/memories/{memory_id}")
-async def delete_memory(memory_id: str):
-    from src.memory.manager import MemoryManager
-
-    manager = MemoryManager()
-    if await manager.delete_memory(memory_id):
-        logger.info(f"Deleted memory {memory_id}")
-        return {"status": "deleted", "memory_id": memory_id}
-    raise HTTPException(status_code=404, detail="Memory not found")
+async def delete_memory_endpoint(
+    memory_id: str,
+    user_id: str = Query("anonymous"),
+):
+    from src.mcp_server.tools import delete_memory
+    result = await delete_memory(memory_id, user_id)
+    if not result.get("deleted"):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"status": "deleted", **result}

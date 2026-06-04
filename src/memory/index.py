@@ -66,6 +66,10 @@ class MemoryIndex:
                 ON memories(importance)
             """)
             
+            try:
+                conn.execute("ALTER TABLE memories ADD COLUMN project_id TEXT")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
     
     def add(
@@ -74,7 +78,8 @@ class MemoryIndex:
         content: str,
         memory_type: str,
         user_id: str = None,
-        importance: float = 0.5
+        importance: float = 0.5,
+        project_id: str = None,
     ):
         """
         Add memory to index.
@@ -90,9 +95,9 @@ class MemoryIndex:
             # 插入主表
             conn.execute("""
                 INSERT OR REPLACE INTO memories 
-                (memory_id, content, memory_type, user_id, importance)
-                VALUES (?, ?, ?, ?, ?)
-            """, (memory_id, content, memory_type, user_id, importance))
+                (memory_id, content, memory_type, user_id, importance, project_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (memory_id, content, memory_type, user_id, importance, project_id))
             
             # 插入全文搜索表
             conn.execute("""
@@ -110,6 +115,7 @@ class MemoryIndex:
         query: str,
         user_id: str = None,
         memory_type: str = None,
+        project_id: str = None,
         limit: int = 10
     ) -> List[Dict]:
         """
@@ -147,6 +153,10 @@ class MemoryIndex:
             if memory_type:
                 sql += " AND memory_type = ?"
                 params.append(memory_type)
+
+            if project_id:
+                sql += " AND (project_id = ? OR project_id IS NULL)"
+                params.append(project_id)
             
             # 排序和限制
             sql += " ORDER BY importance DESC, updated_at DESC LIMIT ?"

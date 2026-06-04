@@ -210,22 +210,19 @@ def test_checkpoint_from_dict():
     assert checkpoint.status == CheckpointStatus.CREATED
 
 
-class TestTaskWithCheckpoint(TaskCheckpointMixin):
-    """Test class with checkpoint support."""
-    
+class _CheckpointTaskHarness(TaskCheckpointMixin):
     def __init__(self):
         super().__init__()
         self.data = {}
-    
+
     def process_step(self, step: int, data: str):
-        """Process a step and save checkpoint."""
         self.data = {"step": step, "data": data}
         self.save_checkpoint(state=self.data)
 
 
 def test_task_checkpoint_mixin():
     """TaskCheckpointMixin 应该支持检查点。"""
-    task = TestTaskWithCheckpoint()
+    task = _CheckpointTaskHarness()
     
     task_id = task.start_task()
     task.process_step(1, "step1")

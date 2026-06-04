@@ -1,3 +1,4 @@
+"""PostgreSQL short-term layer (deferred — not wired to chat/MemoryManager)."""
 import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -12,11 +13,13 @@ logger = logging.getLogger(__name__)
 
 class ShortTermMemory:
     """
-    Short-term Memory Layer - Recent conversations and temporary info.
+    Short-term Memory Layer (library/tests only).
+    
+    Production path: Markdown + SQLite in `MemoryManager`.
     
     Human analogy: What happened yesterday, recent events.
     
-    Implementation:
+    Planned implementation:
     - PostgreSQL with vector storage
     - Semantic search via vector similarity
     - Automatic expiration based on TTL

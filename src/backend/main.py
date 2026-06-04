@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
-from src.backend.api import chat, memory
+from src.backend.api import chat, memory, integrations
+from src.backend.auth import APIKeyMiddleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +16,7 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# Add CORS middleware
+app.add_middleware(APIKeyMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],  # Next.js dev server
@@ -27,13 +28,17 @@ app.add_middleware(
 # Include routers
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(memory.router, prefix="/api", tags=["memory"])
+app.include_router(integrations.router, prefix="/api", tags=["integrations"])
 
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    from src.backend.auth import is_auth_enabled
+
     return {
         "status": "healthy",
         "service": "MemoMind",
-        "version": "0.1.0"
+        "version": "0.1.0",
+        "auth_required": is_auth_enabled(),
     }

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "memoryagent": {
+      "command": "python3",
+      "args": ["-m", "src.mcp_server.server"],
+      "cwd": "/absolute/path/to/MemoryAgent",
+      "env": {
+        "MEMORYAGENT_STORAGE_DIR": "/your/project/.memoryagent/memories",
+        "MEMORYAGENT_WORKSPACE_DIR": "/your/project"
+      },
+      "description": "Memory sidecar v2: recall/store/update/delete/list/export"
+    }
+  }
+}

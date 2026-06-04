@@ -50,6 +50,18 @@ class ContextCompressor:
     def __init__(self, llm_service=None, file_storage_dir: str = "/tmp/memoryai"):
         self.llm = llm_service
         self.file_storage_dir = file_storage_dir
+
+    def maybe_inject_symbolic(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        from src.utils.config import settings
+        from src.agent.symbolic_memory import inject_symbolic_message
+
+        if not settings.SYMBOLIC_MEMORY_ENABLED:
+            return messages
+        return inject_symbolic_message(
+            messages,
+            self.file_storage_dir,
+            min_tools=settings.SYMBOLIC_MEMORY_MIN_TOOLS,
+        )
     
     async def compress(
         self,

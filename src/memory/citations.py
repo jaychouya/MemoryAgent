@@ -14,6 +14,11 @@ class MemoryCitation:
     age_days: int
     is_stale: bool
     selection_reason: str
+    evidence_level: str = "L1"
+    source_session_id: str = ""
+    source_turn: int = 0
+    source_quote: str = ""
+    l0_path: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -36,6 +41,11 @@ def build_citations(
                 age_days=int(item.get("age_days", 0)),
                 is_stale=bool(item.get("is_stale", False)),
                 selection_reason=item.get("selection_reason") or selection_reason,
+                evidence_level=item.get("evidence_level") or "L1",
+                source_session_id=item.get("source_session_id") or "",
+                source_turn=int(item.get("source_turn") or 0),
+                source_quote=item.get("source_quote") or "",
+                l0_path=item.get("l0_path") or "",
             )
         )
     return citations

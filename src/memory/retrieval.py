@@ -9,7 +9,10 @@ from datetime import datetime
 from src.memory.types import MemoryType, MEMORY_TYPE_DESCRIPTIONS
 from src.memory.storage import MemoryStorage
 from src.memory.vector_store import VectorStore, HybridRetriever
-from src.memory.embeddings import local_embed
+from src.memory.embeddings import embed_text, local_embed
+from src.memory.rerank import rerank_candidates
+from src.memory.query_rewrite import rewrite_query_for_retrieval
+from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +47,7 @@ class MemoryRetrieval:
     ):
         """Add or refresh vector index entry for a memory."""
         try:
-            embedding = local_embed(content)
+            embedding = embed_text(content)
             self.vector_store.add(
                 text=content,
                 embedding=embedding,
@@ -61,12 +64,26 @@ class MemoryRetrieval:
         self,
         query: str,
         user_id: str = None,
+        project_id: str = None,
         limit: int = 5
     ) -> List[Dict]:
+        search_query = query or ""
+        if (
+            settings.MEMORY_QUERY_REWRITE_ENABLED
+            and search_query
+            and len(search_query) >= settings.MEMORY_QUERY_REWRITE_MIN_LEN
+        ):
+            rewritten, _ = rewrite_query_for_retrieval(
+                search_query, max_len=settings.MEMORY_QUERY_REWRITE_MAX_LEN
+            )
+            search_query = rewritten
+
+        pool = settings.RERANK_CANDIDATE_POOL if settings.RERANK_ENABLED else limit * 2
         keyword_results = self.storage.index.search(
-            query=query or "",
+            query=search_query,
             user_id=user_id,
-            limit=limit * 2
+            project_id=project_id,
+            limit=max(pool, limit * 2),
         )
 
         if user_id:
@@ -80,6 +97,7 @@ class MemoryRetrieval:
             keyword_results = self.storage.index.search(
                 query="",
                 user_id=user_id,
+                project_id=project_id,
                 limit=limit * 2
             )
             keyword_results = [
@@ -89,16 +107,16 @@ class MemoryRetrieval:
             ]
 
         selection_reason = "fallback_all_user"
-        if query and keyword_results:
+        if search_query and keyword_results:
             try:
-                query_embedding = local_embed(query)
+                query_embedding = embed_text(search_query)
                 merged = await self.hybrid.retrieve(
-                    query=query,
+                    query=search_query,
                     query_embedding=query_embedding,
                     keyword_results=keyword_results,
-                    top_k=limit
+                    top_k=pool,
                 )
-                results = self._normalize_hybrid_results(merged, limit)
+                results = self._normalize_hybrid_results(merged, pool)
                 selection_reason = "keyword+vector"
             except Exception as e:
                 logger.warning(f"Hybrid retrieval failed, using keyword only: {e}")
@@ -114,12 +132,56 @@ class MemoryRetrieval:
                 if r.get("user_id") == user_id
                 or (r.get("memory_id") or r.get("id") or "").startswith(f"{user_id}_")
             ]
+        if project_id:
+            results = [
+                r for r in results
+                if not r.get("project_id") or r.get("project_id") == project_id
+            ]
+
+        if query and results and settings.RERANK_ENABLED:
+            results = await rerank_candidates(
+                query or search_query, results, top_k=limit, llm_service=self.llm
+            )
+        else:
+            results = results[:limit]
+            for result in results:
+                result["selection_reason"] = selection_reason
 
         for result in results:
             self._apply_staleness(result)
-            result["selection_reason"] = selection_reason
+            if "selection_reason" not in result:
+                result["selection_reason"] = selection_reason
 
-        return results[:limit]
+        results = await self._enrich_provenance(results[:limit])
+        return results
+
+    async def _enrich_provenance(self, results: List[Dict]) -> List[Dict]:
+        from src.utils.config import settings
+
+        if not settings.PROVENANCE_ENABLED:
+            return results
+        for row in results:
+            mid = row.get("memory_id") or row.get("id")
+            if not mid:
+                continue
+            try:
+                item = await self.storage.retrieve(mid)
+                if not item:
+                    continue
+                for key in (
+                    "evidence_level",
+                    "source_session_id",
+                    "source_turn",
+                    "source_quote",
+                    "l0_path",
+                ):
+                    if item.metadata.get(key) is not None:
+                        row[key] = item.metadata.get(key)
+                if not row.get("description") and item.description:
+                    row["description"] = item.description
+            except Exception as e:
+                logger.debug(f"Provenance enrich skip {mid}: {e}")
+        return results
 
     def _normalize_hybrid_results(self, merged: List[Dict], limit: int) -> List[Dict]:
         normalized = []

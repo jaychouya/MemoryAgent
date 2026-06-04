@@ -1,20 +1,13 @@
-import pytest
-import asyncio
-from typing import Generator
+"""Pytest configuration for the test suite."""
 from unittest.mock import AsyncMock
 
+import pytest
 
-@pytest.fixture(scope="session")
-def event_loop() -> Generator:
-    """Create event loop for async tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+pytest_plugins = ("pytest_asyncio",)
 
 
 @pytest.fixture
 def mock_redis() -> AsyncMock:
-    """Mock Redis client."""
     mock = AsyncMock()
     mock.get = AsyncMock(return_value=None)
     mock.set = AsyncMock(return_value=True)
@@ -25,7 +18,6 @@ def mock_redis() -> AsyncMock:
 
 @pytest.fixture
 def mock_embedding_service() -> AsyncMock:
-    """Mock embedding service."""
     mock = AsyncMock()
     mock.embed = AsyncMock(return_value=[0.1] * 1536)
     mock.embed_batch = AsyncMock(return_value=[[0.1] * 1536])
