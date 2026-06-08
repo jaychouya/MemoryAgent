@@ -1,9 +1,0 @@
-{
-  "key": "user1:test_quality",
-  "messages": [
-    {
-      "role": "user",
-      "content": "\u6211\u559c\u6b22Python\uff0c\u8ba8\u538cJava"
-    }
-  ]
-}

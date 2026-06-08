@@ -16,10 +16,19 @@ node_modules/
 .DS_Store
 **/.DS_Store
 .cursor/
+.cursorrules
+.vscode/
+.omo/
 
 # Runtime memory/eval artifacts
 .memoryai/
 memories/index.db
 memories/l0/
+memories/user/
+memories/reference/
+memories/feedback/
+memories/project/
+memories/MEMORY.md
 sessions/
+.planning/
 frontend/tsconfig.tsbuildinfo

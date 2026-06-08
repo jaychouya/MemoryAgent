@@ -1,9 +1,0 @@
-{
-  "key": "user1:test_user1_query",
-  "messages": [
-    {
-      "role": "user",
-      "content": "\u6211\u559c\u6b22\u4ec0\u4e48\u7f16\u7a0b\u8bed\u8a00\uff1f"
-    }
-  ]
-}
