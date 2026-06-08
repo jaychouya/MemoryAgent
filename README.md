@@ -21,10 +21,6 @@
 
 ## 演示
 
-<div align="center">
-  <img src="docs/marketing/demo.svg" alt="MemoryAgent Demo" width="100%">
-</div>
-
 **场景 1**: 用户告诉 AI 自己的偏好 → AI 记住
 
 **场景 2**: 新对话 → AI 自动使用记忆，用 Python 写排序函数

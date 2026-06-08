@@ -54,7 +54,7 @@ Coding agents (Cursor, Claude Code, Devin) optimize **Act + Perceive**. MemoryAg
 
 ## Deferred (documented, not deleted)
 
-The four-layer spec (Redis → PostgreSQL → Chroma → graph) remains in `docs/superpowers/specs/` as a **future scale path**. Runtime uses Markdown + SQLite FTS + persistent vectors until multi-user scale requires infra.
+A four-layer scale path (Redis → PostgreSQL → Chroma → graph) is **deferred**. Runtime uses Markdown + SQLite FTS + persistent vectors until multi-user scale requires infra.
 
 When scale demands: message queue for writes, batch vector upsert, Redis L1 for hot sessions.
 
