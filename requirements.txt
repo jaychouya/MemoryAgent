@@ -27,6 +27,7 @@ networkx==3.2.1
 # Utilities
 python-dotenv==1.0.0
 numpy==1.26.3
+PyYAML==6.0.3
 
 # Testing
 pytest==7.4.4
