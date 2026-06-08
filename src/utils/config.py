@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     MEMORY_EXTRACT_ENABLED: bool = True
     MEMORY_EXTRACT_LLM_MIN_CHARS: int = Field(
-        default=400,
+        default=200,
         description="Only call LLM extractor when user+assistant text length >= this (L1 regex always runs)",
     )
     MEMORY_OBSERVER_ASYNC: bool = Field(

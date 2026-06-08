@@ -62,3 +62,25 @@ class TestMemoryManager:
         
         assert "total" in stats
         assert isinstance(stats["total"], int)
+
+    @pytest.mark.asyncio
+    async def test_store_supersedes_old_memory(self, memory_manager):
+        old = await memory_manager.store(
+            content="我现在主要使用 Python",
+            memory_type=MemoryType.USER,
+            user_id="user1",
+        )
+        new = await memory_manager.store(
+            content="我现在主要使用 Rust",
+            memory_type=MemoryType.USER,
+            user_id="user1",
+            metadata={"supersedes": old.id},
+        )
+
+        old_after = await memory_manager.storage.retrieve(old.id)
+        results = await memory_manager.retrieve("主要使用", user_id="user1")
+
+        assert old_after.metadata["superseded_by"] == new.id
+        assert old_after.metadata["valid_until"]
+        assert all(r["memory_id"] != old.id for r in results)
+        assert any(r["memory_id"] == new.id for r in results)

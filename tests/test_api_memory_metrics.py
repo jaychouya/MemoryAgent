@@ -26,3 +26,20 @@ async def test_get_last_report_after_eval():
         assert report.recall_at_5 >= 0.9
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_run_memory_eval_uses_isolated_storage(monkeypatch, tmp_path):
+    from src.backend.api.memory import run_memory_eval
+    from src.memory.service import get_shared_memory_manager, reset_shared_memory_manager
+
+    monkeypatch.setenv("MEMORYAGENT_STORAGE_DIR", str(tmp_path / "live"))
+    reset_shared_memory_manager()
+    live = get_shared_memory_manager()
+    before = await live.get_stats()
+
+    await run_memory_eval()
+
+    after = await live.get_stats()
+    reset_shared_memory_manager()
+    assert after == before

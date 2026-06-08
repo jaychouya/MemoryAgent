@@ -115,6 +115,7 @@ class MemoryRetrieval:
                     query_embedding=query_embedding,
                     keyword_results=keyword_results,
                     top_k=pool,
+                    user_id=user_id,
                 )
                 results = self._normalize_hybrid_results(merged, pool)
                 selection_reason = "keyword+vector"
@@ -153,7 +154,7 @@ class MemoryRetrieval:
                 result["selection_reason"] = selection_reason
 
         results = await self._enrich_provenance(results[:limit])
-        return results
+        return [r for r in results if not r.get("superseded_by")]
 
     async def _enrich_provenance(self, results: List[Dict]) -> List[Dict]:
         from src.utils.config import settings
@@ -174,6 +175,9 @@ class MemoryRetrieval:
                     "source_turn",
                     "source_quote",
                     "l0_path",
+                    "supersedes",
+                    "superseded_by",
+                    "valid_until",
                 ):
                     if item.metadata.get(key) is not None:
                         row[key] = item.metadata.get(key)

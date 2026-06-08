@@ -97,6 +97,16 @@ class MemoryManager:
         success = await self.storage.store(memory)
         
         if success:
+            supersedes = memory.metadata.get("supersedes")
+            if supersedes:
+                await self.storage.update_metadata(
+                    str(supersedes),
+                    {
+                        "superseded_by": memory.id,
+                        "valid_until": datetime.now().isoformat(),
+                    },
+                )
+                self.persistent_vectors.delete(str(supersedes))
             uid = user_id or memory.metadata.get("user_id")
             self.persistent_vectors.upsert(
                 memory_id=memory.id,

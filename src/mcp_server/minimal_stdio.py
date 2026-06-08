@@ -43,6 +43,10 @@ TOOLS = [
                 "memory_type": {"type": "string", "default": "user"},
                 "description": {"type": "string", "default": ""},
                 "project_id": {"type": "string", "default": ""},
+                "supersedes": {"type": "string", "default": ""},
+                "source_session_id": {"type": "string", "default": ""},
+                "source_turn": {"type": "integer", "default": 0},
+                "source_quote": {"type": "string", "default": ""},
             },
             "required": ["content"],
         },
@@ -134,6 +138,10 @@ def _register_handlers(storage_dir: str):
             description=args.get("description") or None,
             storage_dir=storage_dir,
             project_id=pid,
+            supersedes=args.get("supersedes") or None,
+            source_session_id=args.get("source_session_id") or None,
+            source_turn=args.get("source_turn") or None,
+            source_quote=args.get("source_quote") or None,
         ))
 
     async def memory_update(args: dict) -> str:

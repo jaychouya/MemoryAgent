@@ -21,7 +21,7 @@ def build_export_payload(
 ) -> Dict[str, Any]:
     enriched = []
     for m in memories:
-        enriched.append({
+        item = {
             "memory_id": m.get("memory_id") or m.get("id", ""),
             "content": m.get("content", ""),
             "memory_type": m.get("memory_type", "user"),
@@ -31,7 +31,20 @@ def build_export_payload(
             "is_stale": m.get("is_stale", False),
             "selection_reason": m.get("selection_reason", ""),
             "priority": _priority(m.get("memory_type", "user")),
-        })
+        }
+        for key in (
+            "evidence_level",
+            "source_session_id",
+            "source_turn",
+            "source_quote",
+            "l0_path",
+            "supersedes",
+            "superseded_by",
+            "valid_until",
+        ):
+            if m.get(key) is not None:
+                item[key] = m.get(key)
+        enriched.append(item)
     enriched.sort(key=lambda x: (-x["priority"], -float(x.get("score") or 0)))
 
     lines = []

@@ -13,6 +13,10 @@ class MemoryStoreInput(BaseModel):
     memory_type: str = "user"
     description: Optional[str] = Field(default=None, max_length=500)
     project_id: Optional[str] = Field(default=None, max_length=256)
+    supersedes: Optional[str] = Field(default=None, max_length=256)
+    source_session_id: Optional[str] = Field(default=None, max_length=256)
+    source_turn: Optional[int] = Field(default=None, ge=0)
+    source_quote: Optional[str] = Field(default=None, max_length=1000)
 
     @field_validator("memory_type")
     @classmethod
@@ -37,6 +41,10 @@ def validate_store_payload(
     memory_type: str = "user",
     description: Optional[str] = None,
     project_id: Optional[str] = None,
+    supersedes: Optional[str] = None,
+    source_session_id: Optional[str] = None,
+    source_turn: Optional[int] = None,
+    source_quote: Optional[str] = None,
 ) -> Tuple[Optional[MemoryStoreInput], Optional[str]]:
     try:
         return MemoryStoreInput(
@@ -45,6 +53,10 @@ def validate_store_payload(
             memory_type=memory_type,
             description=description,
             project_id=project_id,
+            supersedes=supersedes,
+            source_session_id=source_session_id,
+            source_turn=source_turn,
+            source_quote=source_quote,
         ), None
     except Exception as e:
         return None, str(e)

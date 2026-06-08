@@ -42,3 +42,32 @@ async def test_mcp_crud_lifecycle():
         assert deleted["deleted"]
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_mcp_store_supersedes_with_provenance():
+    tmp = tempfile.mkdtemp()
+    try:
+        storage = str(Path(tmp) / "memories")
+        old = await store_memory(
+            "u1", "用户现在喜欢 Python 编程", memory_type="user", storage_dir=storage
+        )
+        new = await store_memory(
+            "u1",
+            "用户现在喜欢 Rust 编程",
+            memory_type="user",
+            storage_dir=storage,
+            supersedes=old["memory_id"],
+            source_session_id="session-1",
+            source_turn=3,
+            source_quote="我现在喜欢 Rust",
+        )
+
+        recalled = await recall_memories("u1", "喜欢 编程", storage_dir=storage)
+
+        assert new["stored"]
+        assert "Rust" in recalled["prompt_block"]
+        assert "Python" not in recalled["prompt_block"]
+        assert recalled["memories"][0]["source_session_id"] == "session-1"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)

@@ -17,8 +17,13 @@ _TYPE_MAP = {
 }
 
 
+_managers: Dict[str, MemoryManager] = {}
+
+
 def get_manager(storage_dir: str = "memories") -> MemoryManager:
-    return MemoryManager(storage_dir=storage_dir)
+    if storage_dir not in _managers:
+        _managers[storage_dir] = MemoryManager(storage_dir=storage_dir)
+    return _managers[storage_dir]
 
 
 async def recall_memories(
@@ -51,6 +56,10 @@ async def store_memory(
     description: Optional[str] = None,
     storage_dir: str = "memories",
     project_id: Optional[str] = None,
+    supersedes: Optional[str] = None,
+    source_session_id: Optional[str] = None,
+    source_turn: Optional[int] = None,
+    source_quote: Optional[str] = None,
 ) -> Dict[str, Any]:
     validated, err = validate_store_payload(
         user_id=user_id,
@@ -58,13 +67,27 @@ async def store_memory(
         memory_type=memory_type,
         description=description,
         project_id=project_id,
+        supersedes=supersedes,
+        source_session_id=source_session_id,
+        source_turn=source_turn,
+        source_quote=source_quote,
     )
     if validated is None:
         return {"stored": False, "reason": f"validation_error: {err}"}
 
     manager = get_manager(storage_dir)
     mtype = _TYPE_MAP.get(validated.memory_type, MemoryType.USER)
-    meta = {"project_id": validated.project_id} if validated.project_id else {}
+    meta = {}
+    for key in (
+        "project_id",
+        "supersedes",
+        "source_session_id",
+        "source_turn",
+        "source_quote",
+    ):
+        value = getattr(validated, key)
+        if value is not None:
+            meta[key] = value
     item = await manager.store(
         content=validated.content,
         memory_type=mtype,

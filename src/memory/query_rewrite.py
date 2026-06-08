@@ -16,9 +16,7 @@ def rewrite_query_for_retrieval(query: str, max_len: int = 120) -> Tuple[str, bo
     Returns (search_query, was_rewritten).
     """
     raw = (query or "").strip()
-    if not raw:
-        return raw, False
-    if len(raw) <= max_len:
+    if not raw or len(raw) < 12:
         return raw, False
 
     candidate = raw

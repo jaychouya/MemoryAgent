@@ -72,17 +72,22 @@ class VectorStore:
     def search(
         self,
         query_embedding: List[float],
-        top_k: int = 5
+        top_k: int = 5,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for similar documents."""
         if not self.embeddings:
             return []
         
-        # Calculate similarities
         similarities = []
         for i, doc_embedding in enumerate(self.embeddings):
+            doc_id = self.ids[i]
+            if user_id:
+                doc_uid = self.documents[doc_id].metadata.get("user_id")
+                if doc_uid and doc_uid != user_id:
+                    continue
             similarity = self._cosine_similarity(query_embedding, doc_embedding)
-            similarities.append((similarity, self.ids[i]))
+            similarities.append((similarity, doc_id))
         
         # Sort by similarity (descending)
         similarities.sort(key=lambda x: x[0], reverse=True)
@@ -149,11 +154,13 @@ class HybridRetriever:
         query: str,
         query_embedding: List[float],
         keyword_results: List[Dict],
-        top_k: int = 5
+        top_k: int = 5,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Retrieve using hybrid approach."""
-        # Vector search
-        vector_results = self.vector_store.search(query_embedding, top_k=top_k)
+        vector_results = self.vector_store.search(
+            query_embedding, top_k=top_k * 2, user_id=user_id
+        )
         
         # Combine results
         combined = {}

@@ -227,6 +227,25 @@ class MemoryStorage:
         )
         return True
 
+    async def update_metadata(self, memory_id: str, metadata: Dict) -> bool:
+        memory = await self.retrieve(memory_id)
+        if not memory:
+            return False
+        memory.metadata.update(metadata)
+        memory.touch()
+        file_path = self._get_file_path(memory)
+        file_path.write_text(memory.to_markdown(), encoding="utf-8")
+        importance = self.scorer.score(memory.content, memory.type.value)
+        self.index.add(
+            memory_id=memory.id,
+            content=memory.content,
+            memory_type=memory.type.value,
+            user_id=memory.metadata.get("user_id"),
+            importance=importance,
+            project_id=memory.metadata.get("project_id"),
+        )
+        return True
+
     async def delete(self, memory_id: str) -> bool:
         """
         Delete a memory.

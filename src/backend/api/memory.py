@@ -150,11 +150,19 @@ async def export_memories_for_sidecar(
 @router.post("/memory/recall")
 async def recall_memories_sidecar(body: dict):
     from src.mcp_server.tools import recall_memories
+    from src.mcp_server.workspace import effective_chat_scope
+    from src.memory.paths import default_storage_dir
+
+    user_id, project_id = effective_chat_scope(
+        body.get("user_id", "anonymous"),
+        body.get("project_id"),
+    )
     return await recall_memories(
-        user_id=body.get("user_id", "anonymous"),
+        user_id=user_id,
         query=body.get("query", ""),
         limit=int(body.get("limit", 5)),
-        project_id=body.get("project_id"),
+        project_id=project_id or body.get("project_id"),
+        storage_dir=default_storage_dir(),
     )
 
 
@@ -210,12 +218,15 @@ async def get_memory_metrics(user_id: str = Query(default="eval_user")):
 
 @router.post("/memory/metrics/run-eval")
 async def run_memory_eval():
-    from src.memory.eval import run_recall_eval, GOLDEN_PATH
-    from src.memory.service import get_shared_memory_manager
+    import tempfile
 
-    manager = get_shared_memory_manager()
+    from src.memory.eval import run_recall_eval, GOLDEN_PATH
+    from src.memory.manager import MemoryManager
+
     try:
-        report = await run_recall_eval(manager, fixture_path=GOLDEN_PATH)
+        with tempfile.TemporaryDirectory(prefix="memoryagent-eval-") as tmp:
+            manager = MemoryManager(storage_dir=tmp)
+            report = await run_recall_eval(manager, fixture_path=GOLDEN_PATH)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Golden fixture not found")
     return report.to_dict()

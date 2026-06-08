@@ -1,11 +1,33 @@
 """SQLite index for fast memory retrieval."""
 
+import re
 import sqlite3
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _keyword_match_clauses(query: str) -> Tuple[str, List[str]]:
+    q = (query or "").strip()
+    if not q:
+        return "1=1", []
+    if _CJK_RE.search(q):
+        grams = []
+        for i in range(len(q) - 1):
+            g = q[i : i + 2]
+            if _CJK_RE.search(g):
+                grams.append(g)
+        if not grams:
+            grams = [c for c in q if _CJK_RE.match(c)]
+        if grams:
+            parts = ["content LIKE ?"] * min(len(grams), 8)
+            params = [f"%{g}%" for g in grams[:8]]
+            return "(" + " OR ".join(parts) + ")", params
+    return "content LIKE ?", [f"%{q}%"]
 
 
 class MemoryIndex:
@@ -135,12 +157,9 @@ class MemoryIndex:
             
             # 构建查询
             if query:
-                # 使用 LIKE 进行模糊搜索（FTS5 中文支持不好）
-                sql = """
-                    SELECT * FROM memories 
-                    WHERE content LIKE ?
-                """
-                params = [f"%{query}%"]
+                clause, clause_params = _keyword_match_clauses(query)
+                sql = f"SELECT * FROM memories WHERE {clause}"
+                params = list(clause_params)
             else:
                 sql = "SELECT * FROM memories WHERE 1=1"
                 params = []

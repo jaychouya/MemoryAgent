@@ -51,6 +51,10 @@ def _run_fastmcp():
         memory_type: str = "user",
         description: str = "",
         project_id: str = "",
+        supersedes: str = "",
+        source_session_id: str = "",
+        source_turn: int = 0,
+        source_quote: str = "",
     ) -> str:
         uid, pid = resolve_scope(user_id, project_id)
         return format_tool_json(
@@ -61,6 +65,10 @@ def _run_fastmcp():
                 description=description or None,
                 storage_dir=_STORAGE,
                 project_id=pid,
+                supersedes=supersedes or None,
+                source_session_id=source_session_id or None,
+                source_turn=source_turn or None,
+                source_quote=source_quote or None,
             )
         )
 

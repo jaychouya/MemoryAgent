@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { getUserId } from "@/lib/api";
 
 interface MemoryCitation {
   memory_id: string;
@@ -63,7 +64,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
 
   const loadSessions = async () => {
     try {
-      const response = await fetch("/api/sessions?user_id=demo-user");
+      const response = await fetch(`/api/sessions?user_id=${encodeURIComponent(getUserId())}`);
       const data = await response.json();
       setSessions(data.sessions || []);
     } catch (error) {
@@ -75,7 +76,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     if (!confirm("确定要删除这个会话吗？")) return;
     
     try {
-      await fetch(`/api/sessions/${sessionId}?user_id=demo-user`, {
+      await fetch(`/api/sessions/${sessionId}?user_id=${encodeURIComponent(getUserId())}`, {
         method: "DELETE",
       });
       
@@ -115,7 +116,9 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     setShowSessions(false);
     
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/messages?user_id=demo-user`);
+      const response = await fetch(
+        `/api/sessions/${sessionId}/messages?user_id=${encodeURIComponent(getUserId())}`
+      );
       const data = await response.json();
       
       if (data.messages && data.messages.length > 0) {
@@ -155,7 +158,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     const requestBody = {
       message: messageText,
       session_id: currentSessionId,
-      user_id: "demo-user",
+      user_id: getUserId(),
       llm_config: modelConfig ? {
         api_key: modelConfig.apiKey,
         base_url: modelConfig.baseUrl,
