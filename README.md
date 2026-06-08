@@ -392,6 +392,17 @@ python -m pytest tests/ -v
 
 ---
 
+## 相关项目
+
+如果你对 AI 记忆系统感兴趣，还可以看看：
+
+- [Mem0](https://github.com/mem0ai/mem0) - AI 记忆层
+- [Letta](https://github.com/letta-ai/letta) - 长期记忆 AI Agent
+- [Zep](https://github.com/getzep/zep) - AI 记忆平台
+- [Claude Code](https://www.anthropic.com/) - Agent Loop 架构灵感
+- [Cursor](https://cursor.com) - AI 编辑器
+- [MCP](https://modelcontextprotocol.io/) - Model Context Protocol
+
 ## 贡献
 
 欢迎贡献！请遵循以下步骤：
