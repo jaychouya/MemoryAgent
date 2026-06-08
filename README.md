@@ -1,18 +1,19 @@
-# MemoryAgent
+# MemoryAgent — AI Agent 长期记忆系统 | Local Memory for Cursor & Claude Code
 
 <div align="center">
 
-🧠 **本地记忆侧车 — 让 Cursor / Claude Code 越用越懂你**
+🧠 **AI Agent 记忆系统 — 让 Cursor / Claude Code / ChatGPT 越用越懂你 | 本地优先 | Obsidian 兼容 | RAG 记忆检索**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.1-black.svg)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-400+-brightgreen.svg)](#测试)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](#mcp-协议支持)
 
-**每次新会话都要重讲偏好？MemoryAgent 做长期记忆与可解释召回，Coding Agent 专注写代码——分工清晰、数据留在本地。**
+**每次新会话都要重讲偏好？MemoryAgent 为 AI Coding Agent 提供长期记忆，支持 RAG 检索、向量搜索、记忆老化警告——数据留在本地，隐私可控。**
 
-[核心优势](#核心优势) • [功能亮点](#功能亮点) • [快速开始](#快速开始) • [架构设计](#架构设计) • [API 文档](#api-文档)
+[核心优势](#核心优势) • [功能亮点](#功能亮点) • [快速开始](#快速开始) • [Cursor 集成](#cursor-集成) • [Claude Code 集成](#claude-code-集成) • [架构设计](#架构设计)
 
 </div>
 
@@ -66,6 +67,66 @@ bash /path/to/MemoryAgent/scripts/install-sidecar.sh .
 ### 6. 工程可验证
 
 400+ pytest、流式 SSE、多厂商 LLM 配置、架构决策文档化 → 适合二次开发与私有化部署。
+
+---
+
+## 兼容热门生态
+
+MemoryAgent 与以下主流工具无缝集成：
+
+| 工具/框架 | 集成方式 | 说明 |
+|-----------|----------|------|
+| **Cursor** | MCP 协议 | 一键安装，自动配置规则 |
+| **Claude Code** | CLAUDE.md | 六层级配置体系 |
+| **Obsidian** | Markdown 文件 | 记忆直接在 Obsidian 编辑 |
+| **LangChain** | API 兼容 | 可作为记忆层使用 |
+| **FastAPI** | 原生支持 | 后端框架 |
+| **Next.js** | 原生支持 | 前端框架 |
+| **SQLite** | 索引存储 | 快速检索 |
+| **OpenAI API** | 多厂商支持 | 兼容所有 OpenAI 格式 API |
+| **MCP 协议** | 完整实现 | 支持所有 MCP 工具 |
+| **Docker** | 可选部署 | 支持容器化部署 |
+
+### 与 Cursor 集成
+
+```bash
+# 一键安装到当前项目
+bash scripts/install-sidecar.sh .
+```
+
+自动配置：
+- `.cursor/mcp.json` - MCP 服务器配置
+- `.cursor/rules/memory.mdc` - 记忆规则
+- `user_id` / `project_id` 自动推导
+
+### 与 Claude Code 集成
+
+在项目根目录创建 `CLAUDE.md`：
+
+```markdown
+# 项目规范
+
+使用 Python 3.9+
+不要用 mock 数据库
+API 截止日期：周五
+```
+
+MemoryAgent 会自动加载并使用这些规范。
+
+### 与 Obsidian 集成
+
+记忆文件直接保存为 Markdown：
+
+```
+memories/
+├── user/
+│   └── user_abc123.md      # 可在 Obsidian 编辑
+├── feedback/
+│   └── feedback_def456.md
+└── MEMORY.md               # 索引文件
+```
+
+用 Obsidian 打开 `memories/` 文件夹即可浏览和编辑所有记忆。
 
 ---
 
@@ -351,6 +412,7 @@ python -m pytest tests/ -v
 
 ## 相关文档
 
+- [第一性原理 × 竞品对照](docs/competitive-first-principles.md) — Mem0/Zep/Letta 差异与优化路线
 - [架构决策](docs/architecture-decision.md) — 侧车边界与读写路径
 - [Cursor 接入](docs/cursor-integration.md) — 一条命令安装 MCP
 - [Headroom 思路对照](docs/headroom-integration.md) — CCR 与可选 proxy
