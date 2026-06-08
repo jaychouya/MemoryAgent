@@ -8,11 +8,26 @@ import pytest
 from src.memory.manager import MemoryManager
 from src.memory.observer import MemoryObserver
 from src.memory.auto_write import extract_candidates
+from src.memory.types import MemoryType
 
 
 def test_extract_candidates():
     cands = extract_candidates("我喜欢 Python，讨厌 Java")
     assert len(cands) >= 1
+
+
+def test_extract_candidates_stores_project_decision():
+    cands = extract_candidates("本项目决定使用 SQLite FTS 做本地索引。")
+    assert ("本项目决定使用 SQLite FTS 做本地索引", MemoryType.PROJECT) in cands
+
+
+def test_extract_candidates_ignores_memory_meta_question():
+    assert extract_candidates("你记住这个了吗？") == []
+
+
+def test_extract_candidates_ignores_transient_greeting():
+    assert extract_candidates("你好！") == []
+    assert extract_candidates("谢谢") == []
 
 
 @pytest.mark.asyncio

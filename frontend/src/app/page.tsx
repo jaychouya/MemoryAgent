@@ -80,13 +80,13 @@ export default function Home() {
         <aside className="w-56 bg-white border-r border-slate-200 flex flex-col overflow-y-auto flex-shrink-0 hidden lg:flex">
           {/* 记忆架构 */}
           <div className="p-3 border-b border-slate-100">
-            <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">记忆架构</h3>
+            <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">四类型记忆</h3>
             <div className="space-y-1.5">
               {[
-                { name: "工作记忆", desc: "当前上下文", color: "bg-blue-500" },
-                { name: "短期记忆", desc: "近期摘要", color: "bg-purple-500" },
-                { name: "长期记忆", desc: "稳定知识", color: "bg-pink-500" },
-                { name: "情景记忆", desc: "重要事件", color: "bg-amber-500" }
+                { name: "用户画像", desc: "偏好与角色", color: "bg-blue-500" },
+                { name: "行为反馈", desc: "禁忌与要求", color: "bg-green-500" },
+                { name: "项目动态", desc: "决策与截止", color: "bg-purple-500" },
+                { name: "外部引用", desc: "链接与文档", color: "bg-amber-500" }
               ].map((item) => (
                 <div key={item.name} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-50">
                   <div className={`w-2 h-2 ${item.color} rounded-full flex-shrink-0`}></div>
@@ -103,7 +103,7 @@ export default function Home() {
           <div className="p-3 border-b border-slate-100">
             <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">核心特性</h3>
             <div className="space-y-1">
-              {["Agent Loop", "动态Prompt", "四类型记忆", "上下文压缩", "Plan Mode"].map((feature) => (
+              {["MCP 侧车", "可解释召回", "本地 Markdown", "冲突自动失效", "CCR 压缩"].map((feature) => (
                 <div key={feature} className="flex items-center gap-2 px-2 py-1">
                   <svg className="w-3 h-3 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

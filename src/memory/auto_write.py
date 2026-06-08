@@ -29,6 +29,15 @@ PREFERENCE_PATTERNS = [
     (re.compile(r"不要\s*使用\s*(.+?)(?:[，。!！?？\n]|$)"), MemoryType.FEEDBACK),
 ]
 
+PROJECT_PATTERNS = [
+    (re.compile(r"(?:本项目|这个项目|项目|我们)(?:决定|约定|要求|必须|禁止|不允许|默认|采用|使用)(.+?)(?:[，。!！?？\n]|$)"), MemoryType.PROJECT),
+]
+
+_TRANSIENT_UTTERANCE = re.compile(
+    r"^(你好|您好|谢谢|感谢|好的|收到|明白了|知道了|ok|okay|hi|hello)[!！。.?？\s]*$",
+    re.IGNORECASE,
+)
+
 _DEDUP_PATH = Path(".memoryai/observer_dedup.json")
 _recent_hashes: Dict[str, datetime] = {}
 
@@ -68,14 +77,28 @@ def is_duplicate(user_id: str, content: str, hours: int = 24) -> bool:
     return False
 
 
+def _clean_fragment(fragment: str) -> str:
+    return fragment.strip().rstrip("，。!！?？")
+
+
+def _is_memory_meta_question(text: str) -> bool:
+    return "记住" in text and any(k in text for k in ("吗", "了吗", "没", "没有", "是不是"))
+
+
+def is_transient_utterance(text: str) -> bool:
+    return bool(_TRANSIENT_UTTERANCE.match(text.strip()))
+
+
 def extract_candidates(user_message: str) -> List[Tuple[str, MemoryType]]:
     candidates = []
     text = user_message.strip()
     if not text:
         return candidates
-    for pattern, mem_type in PREFERENCE_PATTERNS:
+    if is_transient_utterance(text) or _is_memory_meta_question(text):
+        return candidates
+    for pattern, mem_type in PREFERENCE_PATTERNS + PROJECT_PATTERNS:
         for match in pattern.finditer(text):
-            fragment = match.group(0).strip()
+            fragment = _clean_fragment(match.group(0))
             if len(fragment) >= 6 and not should_exclude(fragment, mem_type.value):
                 candidates.append((fragment, mem_type))
     if not candidates and any(k in text for k in ("喜欢", "讨厌", "偏好", "记住")):

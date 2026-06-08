@@ -261,7 +261,7 @@ cd frontend && npm install && cd ..
 python src/main.py
 ```
 
-访问 http://localhost:3000，点击「配置」按钮设置 API Key。
+如需体验 Web UI，本地启动成功后打开 `http://localhost:3000`，在「配置」里填写模型 API Key。只接入 Cursor / Claude Code 时可跳过 Web UI，直接使用下面的侧车安装方式。
 
 ### 方式三：Cursor / Claude Code 侧车（一条命令）
 
@@ -338,6 +338,20 @@ src/
 
 ## API 文档
 
+常用 HTTP API：
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `POST` | `/api/chat` | 非流式对话 |
+| `POST` | `/api/chat/stream` | SSE 流式对话 |
+| `GET` | `/api/memories` | 列出用户记忆 |
+| `PATCH` | `/api/memories/{id}` | 修改记忆 |
+| `DELETE` | `/api/memories/{id}` | 删除记忆 |
+| `GET` | `/api/memory/stats` | 记忆统计 |
+| `GET` | `/api/memory/metrics` | 召回质量指标 |
+| `POST` | `/api/memory/metrics/run-eval` | 运行黄金集评估 |
+| `POST` | `/api/config/quick-setup` | 快速保存模型配置 |
+
 ### 发送消息
 
 ```bash
@@ -360,7 +374,7 @@ curl -X POST http://localhost:8000/api/config/quick-setup \
 curl http://localhost:8000/api/memory/stats
 ```
 
-更多 API 文档访问：http://localhost:8000/docs
+FastAPI Swagger 仍保留在 `/docs`，仅作为本地开发调试入口；README 已覆盖常用接口。
 
 ---
 

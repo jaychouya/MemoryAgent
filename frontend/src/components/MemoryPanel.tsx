@@ -47,6 +47,7 @@ export default function MemoryPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [evalRunning, setEvalRunning] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "memories" | "quality">("overview");
+  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     loadStats();
@@ -81,15 +82,20 @@ export default function MemoryPanel() {
 
   const runEval = async () => {
     setEvalRunning(true);
+    setNotice(null);
     try {
       const response = await apiFetch("/api/memory/metrics/run-eval", {
         method: "POST",
       });
       if (response.ok) {
         await loadMetrics();
+        setNotice({ type: "success", text: "评估完成，质量指标已更新。" });
+      } else {
+        setNotice({ type: "error", text: "评估失败，请检查后端服务。" });
       }
     } catch (error) {
       console.error("Eval failed:", error);
+      setNotice({ type: "error", text: "评估失败，请稍后重试。" });
     } finally {
       setEvalRunning(false);
     }
@@ -113,6 +119,7 @@ export default function MemoryPanel() {
   };
 
   const saveEdit = async (memoryId: string) => {
+    setNotice(null);
     const response = await apiFetch(`/api/memories/${encodeURIComponent(memoryId)}`, {
       method: "PATCH",
       body: JSON.stringify({
@@ -125,11 +132,15 @@ export default function MemoryPanel() {
       setEditingId(null);
       await loadMemories();
       await loadStats();
+      setNotice({ type: "success", text: "记忆已更新。" });
+    } else {
+      setNotice({ type: "error", text: "保存失败，请检查权限或内容。" });
     }
   };
 
   const deleteMemory = async (memoryId: string) => {
     if (!confirm("确定删除这条记忆吗？")) return;
+    setNotice(null);
     const response = await apiFetch(
       `/api/memories/${encodeURIComponent(memoryId)}?user_id=${encodeURIComponent(getUserId())}`,
       { method: "DELETE" }
@@ -137,6 +148,18 @@ export default function MemoryPanel() {
     if (response.ok) {
       await loadMemories();
       await loadStats();
+      setNotice({ type: "success", text: "记忆已删除。" });
+    } else {
+      setNotice({ type: "error", text: "删除失败，请检查权限。" });
+    }
+  };
+
+  const copyStarterPrompt = async (prompt: string) => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setNotice({ type: "success", text: "已复制，可粘贴到聊天框发送。" });
+    } catch {
+      setNotice({ type: "error", text: "复制失败，请手动选中文案。" });
     }
   };
 
@@ -153,6 +176,12 @@ export default function MemoryPanel() {
     project: "bg-purple-500",
     reference: "bg-amber-500",
   };
+
+  const starterPrompts = [
+    "我偏好：代码直接、少解释、不要过度设计。",
+    "本项目决定使用 SQLite FTS + 本地向量做记忆检索。",
+    "不要使用 mock 数据库，除非我明确要求。",
+  ];
 
   if (isLoading && !stats) {
     return (
@@ -172,6 +201,16 @@ export default function MemoryPanel() {
       <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
         记忆系统
       </h3>
+
+      {notice && (
+        <div className={`text-[10px] rounded-lg px-2 py-1.5 border ${
+          notice.type === "success"
+            ? "bg-green-50 text-green-700 border-green-200"
+            : "bg-red-50 text-red-700 border-red-200"
+        }`}>
+          {notice.text}
+        </div>
+      )}
 
       <div className="flex gap-1 text-[10px]">
         <button
@@ -234,7 +273,27 @@ export default function MemoryPanel() {
             刷新记忆列表
           </button>
           {memories.length === 0 ? (
-            <p className="text-[10px] text-slate-500">暂无记忆</p>
+            <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100 space-y-2">
+              <p className="text-[11px] font-semibold text-indigo-800">
+                先让 MemoryAgent 认识你
+              </p>
+              <p className="text-[10px] text-indigo-700">
+                在聊天里输入下面任意一句，系统会自动沉淀为可编辑记忆。
+              </p>
+              <div className="space-y-1">
+                {starterPrompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => copyStarterPrompt(prompt)}
+                    className="w-full text-left text-[10px] text-slate-700 bg-white rounded border border-indigo-100 p-2 hover:border-indigo-300 hover:bg-indigo-50"
+                  >
+                    {prompt}
+                    <span className="block text-[9px] text-indigo-500 mt-1">点击复制</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : (
             memories.map((memory) => {
               const memoryType = memory.memory_type || memory.layer || "user";

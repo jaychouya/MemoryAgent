@@ -19,6 +19,7 @@ class MemoryCitation:
     source_turn: int = 0
     source_quote: str = ""
     l0_path: str = ""
+    judge_reason: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -46,6 +47,7 @@ def build_citations(
                 source_turn=int(item.get("source_turn") or 0),
                 source_quote=item.get("source_quote") or "",
                 l0_path=item.get("l0_path") or "",
+                judge_reason=item.get("judge_reason") or "",
             )
         )
     return citations

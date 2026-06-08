@@ -116,6 +116,7 @@ class MemoryCitationResponse(BaseModel):
     source_turn: int = 0
     source_quote: str = ""
     l0_path: str = ""
+    judge_reason: str = ""
 
 
 class ChatResponse(BaseModel):

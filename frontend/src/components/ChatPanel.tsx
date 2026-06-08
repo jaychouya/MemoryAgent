@@ -12,6 +12,8 @@ interface MemoryCitation {
   age_days: number;
   is_stale: boolean;
   selection_reason: string;
+  source_quote?: string;
+  judge_reason?: string;
 }
 
 interface Message {
@@ -349,6 +351,12 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
                   </div>
                   <div className="text-slate-500">{c.memory_type} · {c.selection_reason}</div>
                   <div className="mt-0.5 line-clamp-2">{c.content_snippet}</div>
+                  {c.source_quote && (
+                    <div className="text-slate-500 mt-0.5">原话: {c.source_quote}</div>
+                  )}
+                  {c.judge_reason && (
+                    <div className="text-slate-400 mt-0.5">裁判: {c.judge_reason}</div>
+                  )}
                   {c.is_stale && (
                     <div className="text-amber-600 mt-0.5">陈旧 {c.age_days} 天</div>
                   )}

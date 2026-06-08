@@ -14,6 +14,7 @@ def test_build_citations_from_retrieve_dict():
             "source_session_id": "sess-1",
             "source_quote": "用户说过喜欢 Python",
             "evidence_level": "L1",
+            "judge_reason": "overlap,not_superseded",
         }
     ]
     citations = build_citations(results, selection_reason="keyword+vector")
@@ -26,3 +27,4 @@ def test_build_citations_from_retrieve_dict():
     assert "Python" in c.content_snippet
     assert c.source_session_id == "sess-1"
     assert c.source_quote == "用户说过喜欢 Python"
+    assert c.judge_reason == "overlap,not_superseded"
