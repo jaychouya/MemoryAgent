@@ -179,9 +179,7 @@ class MemoryStorage:
                     
                     mem_user = memory.metadata.get("user_id")
                     if user_id:
-                        id_match = file_path.stem.startswith(f"{user_id}_") or file_path.stem.startswith(user_id)
-                        meta_match = mem_user == user_id
-                        if not (id_match or meta_match):
+                        if mem_user != user_id:
                             continue
                     
                     # Simple text matching

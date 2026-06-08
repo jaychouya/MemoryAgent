@@ -115,6 +115,11 @@ async def update_memory(
     storage_dir: str = "memories",
 ) -> Dict[str, Any]:
     manager = get_manager(storage_dir)
+    exists = await manager.storage.retrieve(memory_id)
+    if not exists:
+        return {"updated": False, "memory_id": memory_id, "reason": "not_found"}
+    if not await manager.owns_memory(memory_id, user_id):
+        return {"updated": False, "memory_id": memory_id, "reason": "forbidden"}
     ok = await manager.update_memory(memory_id, content=content, description=description)
     if ok:
         log_memory_event("update", user_id, memory_id=memory_id)
@@ -127,6 +132,11 @@ async def delete_memory(
     storage_dir: str = "memories",
 ) -> Dict[str, Any]:
     manager = get_manager(storage_dir)
+    exists = await manager.storage.retrieve(memory_id)
+    if not exists:
+        return {"deleted": False, "memory_id": memory_id, "reason": "not_found"}
+    if not await manager.owns_memory(memory_id, user_id):
+        return {"deleted": False, "memory_id": memory_id, "reason": "forbidden"}
     ok = await manager.delete_memory(memory_id)
     if ok:
         log_memory_event("delete", user_id, memory_id=memory_id)

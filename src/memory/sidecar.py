@@ -41,6 +41,10 @@ def build_export_payload(
             "supersedes",
             "superseded_by",
             "valid_until",
+            "conflict_reason",
+            "judge_score",
+            "judge_reason",
+            "dropped_reason",
         ):
             if m.get(key) is not None:
                 item[key] = m.get(key)

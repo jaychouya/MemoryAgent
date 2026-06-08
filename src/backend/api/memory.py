@@ -79,42 +79,48 @@ def _rows_for_user(rows: List[Dict], user_id: str) -> List[Dict]:
     filtered = []
     for row in rows:
         uid = row.get("user_id")
-        mid = row.get("memory_id") or row.get("id") or ""
-        if uid == user_id or str(mid).startswith(f"{user_id}_"):
+        if uid == user_id:
             filtered.append(row)
     return filtered
 
 
-@router.get("/memories", response_model=List[MemoryResponse])
+@router.get("/memories")
 async def list_memories(
     user_id: str = Query(..., description="User identifier"),
     layer: Optional[str] = Query(None, description="Memory layer filter"),
+    project_id: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100)
 ):
     """List memories for a user (index-backed, user-scoped)."""
     from src.memory.service import get_shared_memory_manager
 
     manager = get_shared_memory_manager()
-    rows = manager.storage.index.search(
-        query="",
+    rows = await manager.list_memories(
         user_id=user_id,
+        project_id=project_id,
         memory_type=layer,
-        limit=limit * 3,
+        limit=limit,
     )
-    rows = _rows_for_user(rows, user_id)[:limit]
-
-    memories = []
-    for row in rows:
-        memories.append(
-            MemoryResponse(
-                memory_id=row.get("memory_id") or row.get("id", ""),
-                content=(row.get("content") or "")[:200],
-                layer=row.get("memory_type", "user"),
-                created_at=str(row.get("created_at", "")),
-                metadata={"user_id": user_id},
-            )
-        )
-    return memories
+    return [
+        {
+            "memory_id": row.get("memory_id") or row.get("id", ""),
+            "content": row.get("content", ""),
+            "description": row.get("description", ""),
+            "memory_type": row.get("memory_type", "user"),
+            "layer": row.get("memory_type", "user"),
+            "user_id": row.get("user_id") or user_id,
+            "project_id": row.get("project_id"),
+            "score": row.get("score", 0.0),
+            "source_session_id": row.get("source_session_id"),
+            "source_turn": row.get("source_turn"),
+            "source_quote": row.get("source_quote"),
+            "superseded_by": row.get("superseded_by"),
+            "valid_until": row.get("valid_until"),
+            "conflict_reason": row.get("conflict_reason"),
+            "created_at": str(row.get("created_at", "")),
+        }
+        for row in rows
+    ]
 
 
 @router.get("/memory/stats", response_model=MemoryStatsResponse)
@@ -169,15 +175,19 @@ async def recall_memories_sidecar(body: dict):
 @router.patch("/memories/{memory_id}")
 async def update_memory_endpoint(memory_id: str, body: dict):
     from src.mcp_server.tools import update_memory
+    from src.memory.paths import default_storage_dir
+
     user_id = body.get("user_id", "anonymous")
     result = await update_memory(
         memory_id=memory_id,
         user_id=user_id,
         content=body.get("content"),
         description=body.get("description"),
+        storage_dir=default_storage_dir(),
     )
     if not result.get("updated"):
-        raise HTTPException(status_code=404, detail="Memory not found")
+        status = 403 if result.get("reason") == "forbidden" else 404
+        raise HTTPException(status_code=status, detail=result.get("reason", "Memory not found"))
     return result
 
 
@@ -238,7 +248,10 @@ async def delete_memory_endpoint(
     user_id: str = Query("anonymous"),
 ):
     from src.mcp_server.tools import delete_memory
-    result = await delete_memory(memory_id, user_id)
+    from src.memory.paths import default_storage_dir
+
+    result = await delete_memory(memory_id, user_id, storage_dir=default_storage_dir())
     if not result.get("deleted"):
-        raise HTTPException(status_code=404, detail="Memory not found")
+        status = 403 if result.get("reason") == "forbidden" else 404
+        raise HTTPException(status_code=status, detail=result.get("reason", "Memory not found"))
     return {"status": "deleted", **result}

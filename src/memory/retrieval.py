@@ -12,6 +12,7 @@ from src.memory.vector_store import VectorStore, HybridRetriever
 from src.memory.embeddings import embed_text, local_embed
 from src.memory.rerank import rerank_candidates
 from src.memory.query_rewrite import rewrite_query_for_retrieval
+from src.memory.recall_judge import judge_memories
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,6 @@ class MemoryRetrieval:
             keyword_results = [
                 r for r in keyword_results
                 if r.get("user_id") == user_id
-                or (r.get("memory_id") or "").startswith(f"{user_id}_")
             ]
 
         if not keyword_results and user_id:
@@ -103,7 +103,6 @@ class MemoryRetrieval:
             keyword_results = [
                 r for r in keyword_results
                 if r.get("user_id") == user_id
-                or (r.get("memory_id") or "").startswith(f"{user_id}_")
             ]
 
         selection_reason = "fallback_all_user"
@@ -131,7 +130,6 @@ class MemoryRetrieval:
             results = [
                 r for r in results
                 if r.get("user_id") == user_id
-                or (r.get("memory_id") or r.get("id") or "").startswith(f"{user_id}_")
             ]
         if project_id:
             results = [
@@ -141,7 +139,7 @@ class MemoryRetrieval:
 
         if query and results and settings.RERANK_ENABLED:
             results = await rerank_candidates(
-                query or search_query, results, top_k=limit, llm_service=self.llm
+                query or search_query, results, top_k=pool, llm_service=self.llm
             )
         else:
             results = results[:limit]
@@ -153,8 +151,14 @@ class MemoryRetrieval:
             if "selection_reason" not in result:
                 result["selection_reason"] = selection_reason
 
-        results = await self._enrich_provenance(results[:limit])
-        return [r for r in results if not r.get("superseded_by")]
+        results = await self._enrich_provenance(results[:pool])
+        return judge_memories(
+            query or search_query,
+            results,
+            user_id=user_id,
+            project_id=project_id,
+            limit=limit,
+        )
 
     async def _enrich_provenance(self, results: List[Dict]) -> List[Dict]:
         from src.utils.config import settings
@@ -178,6 +182,7 @@ class MemoryRetrieval:
                     "supersedes",
                     "superseded_by",
                     "valid_until",
+                    "conflict_reason",
                 ):
                     if item.metadata.get(key) is not None:
                         row[key] = item.metadata.get(key)

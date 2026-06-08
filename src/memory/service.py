@@ -12,6 +12,8 @@ _manager_dir: Optional[str] = None
 def get_shared_memory_manager(llm_service=None) -> MemoryManager:
     global _manager, _manager_dir
     storage = default_storage_dir()
+    if _manager is not None and _manager_dir is None:
+        _manager_dir = storage
     if _manager is None or _manager_dir != storage:
         _manager = MemoryManager(storage_dir=storage, llm_service=llm_service)
         _manager_dir = storage

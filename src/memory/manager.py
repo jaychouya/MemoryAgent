@@ -17,6 +17,7 @@ from src.memory.types import MemoryItem, MemoryType
 from src.memory.storage import MemoryStorage
 from src.memory.retrieval import MemoryRetrieval
 from src.memory.persistent_vector import PersistentVectorStore
+from src.memory.conflicts import find_conflicts
 from src.memory.exclusions import should_exclude, get_exclusion_reason
 from src.memory.embeddings import embed_text
 from src.utils.config import settings
@@ -107,6 +108,8 @@ class MemoryManager:
                     },
                 )
                 self.persistent_vectors.delete(str(supersedes))
+            elif user_id:
+                await self._auto_supersede_conflicts(memory, user_id)
             uid = user_id or memory.metadata.get("user_id")
             self.persistent_vectors.upsert(
                 memory_id=memory.id,
@@ -118,11 +121,48 @@ class MemoryManager:
             return memory
         return None
 
+    async def _auto_supersede_conflicts(self, memory: MemoryItem, user_id: str) -> None:
+        rows = self.storage.index.search(
+            query="",
+            user_id=user_id,
+            memory_type=memory.type.value,
+            project_id=memory.metadata.get("project_id"),
+            limit=100,
+        )
+        rows = [r for r in rows if (r.get("memory_id") or "") != memory.id]
+        conflicts = find_conflicts(
+            memory.content,
+            rows,
+            user_id=user_id,
+            project_id=memory.metadata.get("project_id"),
+            memory_type=memory.type.value,
+        )
+        for row in conflicts:
+            old_id = row.get("memory_id") or row.get("id")
+            if not old_id:
+                continue
+            await self.storage.update_metadata(
+                old_id,
+                {
+                    "superseded_by": memory.id,
+                    "valid_until": datetime.now().isoformat(),
+                    "conflict_reason": row.get("conflict_reason", "auto_conflict"),
+                },
+            )
+            self.persistent_vectors.delete(old_id)
+
     async def delete_memory(self, memory_id: str) -> bool:
         ok = await self.storage.delete(memory_id)
         if ok:
             self.persistent_vectors.delete(memory_id)
         return ok
+
+    async def owns_memory(self, memory_id: str, user_id: str) -> bool:
+        memory = await self.storage.retrieve(memory_id)
+        if not memory:
+            return False
+        mem_user = memory.metadata.get("user_id")
+        return mem_user == user_id
 
     async def update_memory(
         self,
@@ -161,11 +201,29 @@ class MemoryManager:
         for row in rows:
             uid = row.get("user_id")
             mid = row.get("memory_id") or ""
-            if uid != user_id and not str(mid).startswith(f"{user_id}_"):
+            if uid != user_id:
                 continue
             pid = row.get("project_id")
             if project_id and pid and pid != project_id:
                 continue
+            try:
+                item = await self.storage.retrieve(mid)
+                if item:
+                    row["content"] = item.content
+                    row["description"] = item.description
+                    for key in (
+                        "source_session_id",
+                        "source_turn",
+                        "source_quote",
+                        "supersedes",
+                        "superseded_by",
+                        "valid_until",
+                        "conflict_reason",
+                    ):
+                        if item.metadata.get(key) is not None:
+                            row[key] = item.metadata.get(key)
+            except Exception:
+                pass
             row["project_id"] = pid
             out.append(row)
         return out[:limit]
