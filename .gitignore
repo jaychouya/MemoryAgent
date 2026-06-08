@@ -11,3 +11,15 @@ node_modules/
 
 # Per-project memory (install-sidecar default)
 .memoryagent/
+
+# Local OS/editor artifacts
+.DS_Store
+**/.DS_Store
+.cursor/
+
+# Runtime memory/eval artifacts
+.memoryai/
+memories/index.db
+memories/l0/
+sessions/
+frontend/tsconfig.tsbuildinfo

@@ -1,5 +1,7 @@
 # 第一性原理 × 竞品对照 × 优化路线
 
+<!-- markdownlint-disable MD060 -->
+
 ## 1. 第一性原理：Agent 记忆到底解决什么？
 
 无状态 LLM 只有 **context window**，没有 **跨会话状态**。记忆层的本质任务：
@@ -56,15 +58,17 @@ MemoryAgent 的边界：**Remember + Align**，不替代 Coding Agent 的 **Act 
 | 差距 | 对标 | 建议 |
 |------|------|------|
 | **时序失效** | Zep valid_until | ✅ 显式 `supersedes`：旧记忆写入 `superseded_by` / `valid_until`，召回过滤失效项 |
-| **记忆 CRUD UI** | Mem0 dashboard | MemoryPanel 接 list/patch/delete |
+| **召回裁判器** | Mem0/Zep 二阶段检索 | ✅ `RecallJudge` 本地规则裁判：过滤失效/越权记忆，输出 `judge_score` / `judge_reason` |
+| **记忆 CRUD UI** | Mem0 dashboard | ✅ MemoryPanel 支持 list / edit / delete / provenance / eval |
 | **Eval 污染生产库** | Mem0 独立 tenant | ✅ `/memory/metrics/run-eval` 使用临时 `storage_dir` |
 | **MCP store 无 provenance** | Zep episode | ✅ `memory_store` 支持 `source_session_id` / `source_turn` / `source_quote` |
+| **自动冲突检测** | Zep valid_until | ✅ 同 scope 高置信替换自动写 `superseded_by` / `valid_until` / `conflict_reason` |
 | **LLM extract 阈值** | Mem0 每轮 extract | 已降 `MEMORY_EXTRACT_LLM_MIN_CHARS` 200；可再加类型感知 |
 
 ### P2（规模化再考虑）
 
 - 启用 Redis/PG/Chroma 四层（见 `architecture-decision.md` Deferred）
-- `MemorySelector` LLM 二阶段精选
+- `MemorySelector` LLM 二阶段精选（默认仍保持本地规则，避免额外成本）
 - Rerank embedding 缓存
 - SOC2 / 多租户计费（若做 SaaS）
 
