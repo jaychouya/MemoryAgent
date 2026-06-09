@@ -7,7 +7,7 @@ from src.memory.manager import MemoryManager
 from src.memory.types import MemoryType
 from src.memory.exclusions import should_exclude
 from src.memory.llm_extractor import extract_memories_from_turn
-from src.memory.auto_write import extract_candidates, is_duplicate, TYPE_MAP
+from src.memory.auto_write import extract_candidates, extract_forget_query, is_duplicate, TYPE_MAP
 from src.utils.config import settings
 from src.memory.provenance import append_l0_turn, l0_path, pick_source_quote
 from pathlib import Path
@@ -38,6 +38,31 @@ def _dedupe_candidates(
     return out
 
 
+def _memory_matches_forget_query(content: str, query: str) -> bool:
+    haystack = content.lower()
+    tokens = [t.lower() for t in query.split() if len(t.strip()) >= 2]
+    if not tokens:
+        return False
+    return all(token in haystack for token in tokens)
+
+
+async def _delete_matching_memories(
+    memory: MemoryManager,
+    query: str,
+    user_id: str,
+    project_id: str = None,
+) -> List[str]:
+    rows = await memory.list_memories(user_id=user_id, project_id=project_id, limit=200)
+    deleted = []
+    for row in rows:
+        content = row.get("content") or ""
+        memory_id = row.get("memory_id") or row.get("id")
+        if memory_id and _memory_matches_forget_query(content, query):
+            if await memory.delete_memory(memory_id):
+                deleted.append(memory_id)
+    return deleted
+
+
 async def persist_turn_memories(
     memory: MemoryManager,
     user_message: str,
@@ -46,6 +71,11 @@ async def persist_turn_memories(
     session_id: str = None,
     project_id: str = None,
 ) -> List[str]:
+    forget_query = extract_forget_query(user_message)
+    if forget_query:
+        await _delete_matching_memories(memory, forget_query, user_id, project_id)
+        return []
+
     candidates: List[Tuple[str, MemoryType]] = []
 
     if memory.llm and should_use_llm_extract(user_message, assistant_message):

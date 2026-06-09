@@ -48,6 +48,7 @@
 - **FTS + 持久向量 + Rerank**（候选 20 → Top5），长问句 **Query Rewrite**
 - 对话展示 **Memory Citation**（分数、类型、陈旧提示）
 - **L0→L1 证据链**：原子记忆可追溯到原会话片段（`memories/l0/`）
+- 默认过滤寒暄、临时任务状态和可从代码推导的信息，减少记忆污染
 - **Recall@5** 黄金集评估 + CI 门禁（目标 ≥90%）
 
 ### 4. 接 Cursor 接近「零配置」
@@ -67,6 +68,27 @@ bash /path/to/MemoryAgent/scripts/install-sidecar.sh .
 ### 6. 工程可验证
 
 400+ pytest、流式 SSE、多厂商 LLM 配置、架构决策文档化 → 适合二次开发与私有化部署。
+
+---
+
+## 借鉴热门 Agent 的接入范式
+
+热门 Agent 项目的共性不是功能堆满，而是让用户快速判断“我该怎么接”。MemoryAgent 推荐按下面方式使用：
+
+| 你的目标 | 推荐接法 | 为什么 |
+|------|------|------|
+| 让 Cursor / Claude Code 记住项目偏好 | MCP 侧车 | 像 OpenHands / Cline 一样服务 coding workflow，但只负责记忆 |
+| 给自研 Agent 加长期记忆 | HTTP API | 像 LangGraph / Mastra 一样把记忆作为独立状态层 |
+| 管理团队项目规则 | Markdown + Obsidian | 像 Cursor Rules 一样可审计，但支持动态沉淀和纠错 |
+| 验证记忆是否靠谱 | Recall Eval | 像成熟 agent 框架一样把质量指标显式化 |
+
+最小闭环：
+
+```text
+用户说出偏好/规则 → MemoryAgent 沉淀 → Agent 召回引用 → 用户可编辑/删除/忘记
+```
+
+MemoryAgent 不做终端、浏览器、Git 自动化；这些交给 Cursor、Claude Code、OpenHands、Aider。它只做一件稀缺能力：**把跨会话偏好、禁忌和项目决策变成可控、可解释、可迁移的记忆层**。
 
 ---
 

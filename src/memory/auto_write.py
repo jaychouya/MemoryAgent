@@ -38,6 +38,11 @@ _TRANSIENT_UTTERANCE = re.compile(
     re.IGNORECASE,
 )
 
+_FORGET_INTENT = re.compile(
+    r"(忘掉|忘记|删除|移除|清除|不要再记住|别再记住|forget|delete|remove)",
+    re.IGNORECASE,
+)
+
 _DEDUP_PATH = Path(".memoryai/observer_dedup.json")
 _recent_hashes: Dict[str, datetime] = {}
 
@@ -89,12 +94,37 @@ def is_transient_utterance(text: str) -> bool:
     return bool(_TRANSIENT_UTTERANCE.match(text.strip()))
 
 
+def extract_forget_query(user_message: str) -> str:
+    text = user_message.strip()
+    if not _FORGET_INTENT.search(text):
+        return ""
+    query = _FORGET_INTENT.sub(" ", text)
+    for word in (
+        "我之前",
+        "之前",
+        "关于",
+        "有关",
+        "这个",
+        "这条",
+        "那条",
+        "的偏好",
+        "偏好",
+        "记忆",
+        "内容",
+        "我",
+        "please",
+    ):
+        query = query.replace(word, " ")
+    query = re.sub(r"[，。!！?？:：\s]+", " ", query).strip()
+    return query
+
+
 def extract_candidates(user_message: str) -> List[Tuple[str, MemoryType]]:
     candidates = []
     text = user_message.strip()
     if not text:
         return candidates
-    if is_transient_utterance(text) or _is_memory_meta_question(text):
+    if extract_forget_query(text) or is_transient_utterance(text) or _is_memory_meta_question(text):
         return candidates
     for pattern, mem_type in PREFERENCE_PATTERNS + PROJECT_PATTERNS:
         for match in pattern.finditer(text):

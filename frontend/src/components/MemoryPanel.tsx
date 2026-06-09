@@ -179,8 +179,8 @@ export default function MemoryPanel() {
 
   const starterPrompts = [
     "我偏好：代码直接、少解释、不要过度设计。",
-    "本项目决定使用 SQLite FTS + 本地向量做记忆检索。",
-    "不要使用 mock 数据库，除非我明确要求。",
+    "本项目约定：优先复用现有组件，不引入新框架。",
+    "不要保存临时调试信息，只记长期有效的偏好和项目决策。",
   ];
 
   if (isLoading && !stats) {
@@ -259,6 +259,12 @@ export default function MemoryPanel() {
                 <span className="text-[11px] text-slate-600">{label}</span>
               </div>
             ))}
+          </div>
+          <div className="bg-green-50 rounded-lg p-2 border border-green-100">
+            <p className="text-[10px] font-medium text-green-800">记忆边界</p>
+            <p className="text-[10px] text-green-700 mt-0.5">
+              优先保存长期偏好、禁忌和项目决策；寒暄、临时状态和可从代码推导的信息会被过滤。
+            </p>
           </div>
         </>
       )}
@@ -422,7 +428,7 @@ export default function MemoryPanel() {
 
       <div className="bg-amber-50 rounded-lg p-2 border border-amber-200">
         <p className="text-[10px] text-amber-700">
-          超过1天的记忆标记为陈旧，引用前会提醒验证。
+          记忆可编辑、可删除；超过1天的记忆标记为陈旧，引用前会提醒验证。
         </p>
       </div>
     </div>

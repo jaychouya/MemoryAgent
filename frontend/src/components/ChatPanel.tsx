@@ -64,6 +64,12 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     loadSessions();
   }, []);
 
+  const quickStartPrompts = [
+    "记住：我偏好代码直接、少解释、不要过度设计。",
+    "本项目约定：优先复用现有组件，不引入新框架。",
+    "忘掉我之前关于 Java 的偏好。",
+  ];
+
   const loadSessions = async () => {
     try {
       const response = await fetch(`/api/sessions?user_id=${encodeURIComponent(getUserId())}`);
@@ -487,8 +493,20 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                 </svg>
               </div>
-              <p className="text-xs font-medium text-slate-500">开始对话</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">输入消息开始体验智能记忆</p>
+              <p className="text-xs font-medium text-slate-500">先给 MemoryAgent 一条可复用信息</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">点击样例填入输入框，发送后可在左侧看到记忆沉淀。</p>
+              <div className="mt-3 w-full max-w-md space-y-1.5">
+                {quickStartPrompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => setInput(prompt)}
+                    className="w-full text-left text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 hover:border-indigo-200 hover:bg-indigo-50"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           
