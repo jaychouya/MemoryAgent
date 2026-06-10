@@ -27,6 +27,18 @@ class Settings(BaseSettings):
     # API Keys
     OPENAI_API_KEY: Optional[str] = None
     ZHIPU_API_KEY: Optional[str] = None
+    LLM_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Default chat model API key (e.g. Xiaomi MiMo)",
+    )
+    LLM_BASE_URL: str = Field(
+        default="https://token-plan-cn.xiaomimimo.com/v1",
+        description="Default chat model base URL",
+    )
+    LLM_MODEL: str = Field(
+        default="mimo-v2.5-pro",
+        description="Default chat model name",
+    )
     
     # Redis (Working Memory)
     REDIS_URL: str = "redis://localhost:6379"
@@ -54,8 +66,17 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSIONS: int = 384
 
     RERANK_ENABLED: bool = True
-    RERANK_CANDIDATE_POOL: int = 20
+    RERANK_CANDIDATE_POOL: int = 12
+    RERANK_EMBED_CAP: int = 8
     RERANK_USE_LLM: bool = False
+    MEMORY_RECALL_FAST: bool = Field(
+        default=True,
+        description="Chat hot path: skip LLM rerank, smaller pool, enrich only top-k",
+    )
+    MEMORY_CONFLICT_UI: bool = Field(
+        default=True,
+        description="Surface memory conflicts to UI instead of silent auto-supersede",
+    )
 
     MEMORY_EXTRACT_ENABLED: bool = True
     MEMORY_EXTRACT_LLM_MIN_CHARS: int = Field(

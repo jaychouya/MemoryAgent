@@ -26,3 +26,4 @@ def test_should_use_llm_extract_threshold():
 def test_llm_extract_respects_min_chars(monkeypatch):
     monkeypatch.setattr(settings, "MEMORY_EXTRACT_LLM_MIN_CHARS", 1000)
     assert should_use_llm_extract("x" * 200, "y" * 200) is False
+    assert should_use_llm_extract("x" * 600, "y" * 600) is True

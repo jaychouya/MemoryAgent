@@ -62,7 +62,8 @@ class MemoryManager:
         memory_type: MemoryType,
         description: str = None,
         user_id: str = None,
-        metadata: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None,
+        auto_supersede: bool = True,
     ) -> Optional[MemoryItem]:
         """
         Store a new memory.
@@ -108,7 +109,7 @@ class MemoryManager:
                     },
                 )
                 self.persistent_vectors.delete(str(supersedes))
-            elif user_id:
+            elif user_id and auto_supersede:
                 await self._auto_supersede_conflicts(memory, user_id)
             uid = user_id or memory.metadata.get("user_id")
             self.persistent_vectors.upsert(
@@ -150,6 +151,58 @@ class MemoryManager:
                 },
             )
             self.persistent_vectors.delete(old_id)
+
+    async def resolve_conflict(
+        self,
+        keep_id: str,
+        supersede_id: str,
+        user_id: str,
+    ) -> Dict[str, Any]:
+        item = await self.storage.retrieve(supersede_id)
+        if not item:
+            return {"ok": False, "reason": "not_found"}
+        owner = item.metadata.get("user_id")
+        if user_id and owner and owner != user_id:
+            return {"ok": False, "reason": "forbidden"}
+        await self.storage.update_metadata(
+            supersede_id,
+            {
+                "superseded_by": keep_id,
+                "valid_until": datetime.now().isoformat(),
+                "conflict_reason": "user_resolved",
+            },
+        )
+        self.persistent_vectors.delete(supersede_id)
+        return {"ok": True, "superseded": supersede_id, "kept": keep_id}
+
+    async def store_resolved_conflict(
+        self,
+        content: str,
+        memory_type: MemoryType,
+        supersede_ids: List[str],
+        user_id: str,
+        project_id: str = None,
+        session_id: str = None,
+    ) -> Optional[MemoryItem]:
+        meta: Dict[str, Any] = {"user_id": user_id, "source": "conflict_resolve"}
+        if project_id:
+            meta["project_id"] = project_id
+        if session_id:
+            meta["source_session_id"] = session_id
+        if supersede_ids:
+            meta["supersedes"] = supersede_ids[0]
+        item = await self.store(
+            content=content,
+            memory_type=memory_type,
+            description=f"用户确认: {content[:30]}",
+            user_id=user_id,
+            metadata=meta,
+            auto_supersede=False,
+        )
+        if item and len(supersede_ids) > 1:
+            for old_id in supersede_ids[1:]:
+                await self.resolve_conflict(item.id, old_id, user_id)
+        return item
 
     async def delete_memory(self, memory_id: str) -> bool:
         ok = await self.storage.delete(memory_id)
@@ -234,7 +287,8 @@ class MemoryManager:
         user_id: str = None,
         session_id: str = None,
         project_id: str = None,
-        top_k: int = 5
+        top_k: int = 5,
+        fast: bool = False,
     ) -> List[Dict]:
         """
         Retrieve relevant memories.
@@ -251,13 +305,13 @@ class MemoryManager:
         from src.utils import as_int
 
         top_k = as_int(top_k, 5)
-        results = await self.retrieval.retrieve(
+        return await self.retrieval.retrieve(
             query=query,
             user_id=user_id,
             project_id=project_id,
             limit=top_k,
+            fast=fast,
         )
-        return results
     
     async def store_user_preference(
         self,

@@ -65,6 +65,40 @@ def embed_text(text: str, dimension: Optional[int] = None) -> List[float]:
         return local_embed(text, dimension=dim)
 
 
+def embed_texts(texts: List[str], dimension: Optional[int] = None) -> List[List[float]]:
+    """Batch embed; one API round-trip when key is configured."""
+    dim = dimension or settings.EMBEDDING_DIMENSIONS or _DEFAULT_DIM
+    cleaned = [t.strip() for t in texts if t and t.strip()]
+    if not cleaned:
+        return []
+    key = _api_key()
+    if not key:
+        return [local_embed(t, dimension=dim) for t in cleaned]
+
+    try:
+        from openai import OpenAI
+
+        kwargs_client = {"api_key": key}
+        if settings.EMBEDDING_BASE_URL:
+            kwargs_client["base_url"] = settings.EMBEDDING_BASE_URL
+        client = OpenAI(**kwargs_client)
+        req = {"model": settings.EMBEDDING_MODEL, "input": cleaned}
+        if "text-embedding-3" in settings.EMBEDDING_MODEL:
+            req["dimensions"] = dim
+        resp = client.embeddings.create(**req)
+        out = []
+        for item in resp.data:
+            emb = item.embedding
+            if len(emb) != dim:
+                out.append(local_embed(cleaned[item.index], dimension=dim))
+            else:
+                out.append(emb)
+        return out
+    except Exception as e:
+        logger.warning(f"Batch API embedding failed, using local: {e}")
+        return [local_embed(t, dimension=dim) for t in cleaned]
+
+
 def cosine_similarity(a: List[float], b: List[float]) -> float:
     if len(a) != len(b):
         return 0.0

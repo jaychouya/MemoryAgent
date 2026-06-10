@@ -9,6 +9,7 @@ _BLOCKED_FRAGMENTS = (
     "changeme",
     "placeholder",
     "example",
+    "abcdefghijklmnopqrstuvwxyz",
 )
 
 

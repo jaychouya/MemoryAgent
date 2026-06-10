@@ -14,6 +14,8 @@ class StreamEventType(str, Enum):
     TOKEN = "token"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+    MEMORY_INJECTED = "memory_injected"
+    RECOVERY = "recovery"
     ERROR = "error"
     DONE = "done"
     MEMORY_WRITES = "memory_writes"

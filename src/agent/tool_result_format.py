@@ -22,20 +22,14 @@ def guess_search_query(url: str, hint: str = "") -> str:
     parsed = urlparse(url)
     host = (parsed.netloc or "").lower()
     path = unquote(parsed.path or "")
-    if any(k in host for k in ("kaoyan", "xdf.cn", "eol.cn", "scribd")):
-        return "2024年考研数学一真题 答案解析"
-    if "wenku.baidu.com" in host:
-        return "2024考研数学一真题 PDF"
-    if "zhihu.com" in host:
-        return "2024考研数学一真题 知乎"
-    if "baidu.com" in host:
-        return "2024考研数学一真题"
     slug = path.rstrip("/").split("/")[-1].replace(".html", "").replace(".shtml", "")
     slug = re.sub(r"[_\-\d]{8,}", " ", slug)
     slug = re.sub(r"\s+", " ", slug).strip()
     if len(slug) >= 4 and not slug.isdigit():
         return slug[:80]
-    return "考研数学一真题"
+    if host:
+        return f"site:{host.split(':')[0]}"[:80]
+    return "web search"
 
 
 def _filter_noise_lines(text: str, max_lines: int = 25) -> str:

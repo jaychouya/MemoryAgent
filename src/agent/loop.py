@@ -14,6 +14,8 @@ from src.agent.query_loop import execute_query_loop, query_loop, LoopEvent, Loop
 from src.agent.loop_state import LoopState, LoopExitReason
 from src.memory.citations import build_citations, citations_to_legacy_strings
 from src.memory.recall_judge import filter_relevant_memories
+from src.memory.inject import format_mandatory_memory_block
+from src.agent.prompts.scene import detect_scene
 from src.backend.chat_utils import build_user_message_content
 
 logger = logging.getLogger(__name__)
@@ -117,21 +119,9 @@ class AgentLoop:
         messages = list(context_messages or [])
         query_text = self._append_user_message(messages, user_message, attachments)
 
-        memories = []
-        memory_citations = []
-        if self.memory and user_id:
-            try:
-                raw = await self.memory.retrieve(
-                    user_id=user_id,
-                    query=query_text,
-                    session_id=session_id,
-                    project_id=project_id,
-                    top_k=5,
-                )
-                memories = filter_relevant_memories(query_text, raw)
-                memory_citations = build_citations(memories)
-            except Exception as e:
-                logger.warning(f"Memory retrieval failed: {e}")
+        memories, memory_citations = await self._recall_for_turn(
+            query_text, user_id, project_id=project_id,
+        )
 
         if not system_prompt:
             system_prompt = self._build_system_prompt(memories, query_text)
@@ -185,24 +175,22 @@ class AgentLoop:
         messages = list(context_messages or [])
         query_text = self._append_user_message(messages, user_message, attachments)
 
-        memories = []
-        if self.memory and user_id:
-            try:
-                raw = await self.memory.retrieve(
-                    user_id=user_id,
-                    query=query_text,
-                    session_id=session_id,
-                    project_id=project_id,
-                    top_k=5,
-                )
-                memories = filter_relevant_memories(query_text, raw)
-            except Exception as e:
-                logger.warning(f"Memory retrieval failed: {e}")
+        memories, citations = await self._recall_for_turn(
+            query_text, user_id, project_id=project_id,
+        )
 
         if not system_prompt:
             system_prompt = self._build_system_prompt(memories, query_text)
 
-        citations = build_citations(memories) if memories else []
+        from src.agent.query_loop import LoopEvent, LoopEventType
+
+        yield LoopEvent(
+            LoopEventType.MEMORY_INJECTED,
+            metadata={
+                "citations": [c.to_dict() for c in citations],
+                "count": len(citations),
+            },
+        )
         loop_state = LoopState(
             messages=messages,
             system_prompt=system_prompt,
@@ -235,24 +223,41 @@ class AgentLoop:
             output_recovery_count=loop_state.output_recovery_count,
         )
 
+    async def _recall_for_turn(
+        self,
+        query_text: str,
+        user_id: str,
+        project_id: str = None,
+        top_k: int = 5,
+    ):
+        if not self.memory or not user_id:
+            return [], []
+        try:
+            raw = await self.memory.retrieve(
+                user_id=user_id,
+                query=query_text,
+                session_id=self.session_id,
+                project_id=project_id,
+                top_k=top_k,
+                fast=True,
+            )
+            memories = filter_relevant_memories(query_text, raw)
+            citations = build_citations(memories)
+            return memories, citations
+        except Exception as e:
+            logger.warning(f"Memory retrieval failed: {e}")
+            return [], []
+
     def _build_system_prompt(self, memories: List = None, user_message: str = "") -> str:
         assembler = get_prompt_assembler()
+        scene = detect_scene(user_message)
         environment_info = {
             "timestamp": datetime.now().isoformat(),
             "session_id": self.session_id or "current",
         }
-        memory_index = None
-        if memories:
-            memory_index = "相关记忆：\n"
-            for mem in memories:
-                if isinstance(mem, dict):
-                    memory_index += f"- {mem.get('content', '')}\n"
-        else:
-            memory_index = (
-                "（未命中相关记忆）请直接回答用户当前问题，"
-                "不要引用、猜测或套用任何用户偏好与历史记忆。"
-            )
+        memory_index = format_mandatory_memory_block(memories or [])
         return assembler.assemble(
             environment_info=environment_info,
             memory_index=memory_index,
+            scene=scene,
         )

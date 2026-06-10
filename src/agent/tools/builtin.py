@@ -239,7 +239,7 @@ class WebSearchTool(ReadOnlyTool):
     """Search public web pages."""
 
     name = "web_search"
-    description = "联网搜索公开网页，适合查询真题、新闻、文档等实时或外部信息"
+    description = "联网搜索公开网页，适合查询新闻、文档、资料等实时或外部信息"
     parameters = {
         "type": "object",
         "properties": {

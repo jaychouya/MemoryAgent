@@ -33,9 +33,15 @@ class ConfigManager:
         },
         "mimo": {
             "name": "小米 MiMo",
-            "base_url": "https://api.mimo.ai/v1",
-            "models": ["mimo-v2.5-pro", "mimo-v2.5"],
-            "default_model": "mimo-v2.5"
+            "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+            "models": ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2-pro", "mimo-v2"],
+            "default_model": "mimo-v2.5-pro"
+        },
+        "xiaomi": {
+            "name": "小米 MiMo",
+            "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+            "models": ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2-pro", "mimo-v2"],
+            "default_model": "mimo-v2.5-pro"
         },
         "zhipu": {
             "name": "智谱 GLM",

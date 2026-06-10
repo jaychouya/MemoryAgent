@@ -24,27 +24,43 @@ async def rerank_candidates(
     candidates: List[Dict[str, Any]],
     top_k: int = 5,
     llm_service=None,
+    use_llm: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     if not candidates:
         return []
     if not settings.RERANK_ENABLED or len(candidates) <= top_k:
         return candidates[:top_k]
 
+    cap = min(len(candidates), settings.RERANK_EMBED_CAP, settings.RERANK_CANDIDATE_POOL)
+    pre_sorted = sorted(
+        candidates,
+        key=lambda c: float(c.get("score") or c.get("importance") or 0.0),
+        reverse=True,
+    )[:cap]
+
+    q_emb = None
+    content_embs: List[List[float]] = []
     try:
-        q_emb = embed_text(query)
+        from src.memory.embeddings import embed_texts
+
+        texts = [query] + [(c.get("content") or "") for c in pre_sorted]
+        embs = embed_texts(texts)
+        if embs:
+            q_emb = embs[0]
+            content_embs = embs[1:]
     except Exception:
-        q_emb = None
+        try:
+            q_emb = embed_text(query)
+        except Exception:
+            q_emb = None
 
     scored = []
-    for c in candidates:
+    for i, c in enumerate(pre_sorted):
         content = c.get("content") or ""
         base = float(c.get("score") or c.get("importance") or 0.5)
         vec_score = 0.0
-        if q_emb and content:
-            try:
-                vec_score = cosine_similarity(q_emb, embed_text(content))
-            except Exception:
-                vec_score = 0.0
+        if q_emb and content and i < len(content_embs):
+            vec_score = cosine_similarity(q_emb, content_embs[i])
         lex = _lexical_score(query, content)
         final = 0.45 * vec_score + 0.35 * base + 0.20 * lex
         row = dict(c)
@@ -54,7 +70,8 @@ async def rerank_candidates(
     scored.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)
     pool = scored[: settings.RERANK_CANDIDATE_POOL]
 
-    if settings.RERANK_USE_LLM and llm_service and getattr(llm_service, "client", None):
+    llm_on = settings.RERANK_USE_LLM if use_llm is None else use_llm
+    if llm_on and llm_service and getattr(llm_service, "client", None):
         pool = await _llm_rerank(query, pool, top_k, llm_service)
     else:
         pool = pool[:top_k]

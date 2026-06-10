@@ -6,9 +6,9 @@ from src.agent.tool_result_format import (
 )
 
 
-def test_guess_search_query_from_kaoyan_url():
+def test_guess_search_query_from_url_without_hint():
     q = guess_search_query("https://kaoyan.xdf.cn/202312/13554664.html")
-    assert "考研" in q or "数学" in q
+    assert q == "site:kaoyan.xdf.cn"
 
 
 def test_guess_search_query_prefers_hint():

@@ -74,8 +74,20 @@ export function getStoredModelConfig(): StoredModelConfig | null {
 }
 
 export function resolveModelConfig(
-  modelConfig?: StoredModelConfig | null
+  modelConfig?: StoredModelConfig | null,
+  backendConfigured = false
 ): StoredModelConfig | null {
+  if (backendConfigured) {
+    if (modelConfig?.baseUrl && modelConfig?.model) {
+      return {
+        providerId: modelConfig.providerId || "custom",
+        apiKey: "",
+        baseUrl: modelConfig.baseUrl.trim(),
+        model: modelConfig.model.trim(),
+      };
+    }
+    return null;
+  }
   const stored = getStoredModelConfig();
   if (stored?.apiKey) return stored;
   if (modelConfig?.apiKey?.trim()) {

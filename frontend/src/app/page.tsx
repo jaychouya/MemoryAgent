@@ -10,62 +10,93 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [crossSessionEnabled, setCrossSessionEnabled] = useState(false);
+  const [needsConfig, setNeedsConfig] = useState(false);
+  const [backendConfigured, setBackendConfigured] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("modelConfig");
     let savedCfg: ModelConfig | null = null;
     if (saved) {
-      savedCfg = JSON.parse(saved);
-      setModelConfig(savedCfg);
+      try {
+        savedCfg = JSON.parse(saved);
+        setModelConfig(savedCfg);
+      } catch {
+        localStorage.removeItem("modelConfig");
+      }
     }
     const crossSession = localStorage.getItem("crossSessionEnabled");
     if (crossSession) {
       setCrossSessionEnabled(JSON.parse(crossSession));
     }
+    const hadBackend = sessionStorage.getItem("backendConfigured") === "true";
+    if (hadBackend) {
+      setBackendConfigured(true);
+      setNeedsConfig(false);
+    }
+
+    const applyBackendConfig = (data: {
+      configured?: boolean;
+      base_url?: string;
+      model?: string;
+    }) => {
+      if (data.configured) {
+        setBackendConfigured(true);
+        setNeedsConfig(false);
+        sessionStorage.setItem("backendConfigured", "true");
+        setModelConfig((prev) => {
+          if (prev?.apiKey) return prev;
+          if (savedCfg?.apiKey) return savedCfg;
+          if (data.base_url && data.model) {
+            const isMimo =
+              data.base_url.includes("xiaomimimo") || String(data.model).startsWith("mimo");
+            return {
+              providerId: isMimo ? "xiaomi" : savedCfg?.providerId || "custom",
+              apiKey: "",
+              baseUrl: data.base_url,
+              model: data.model,
+            };
+          }
+          return prev;
+        });
+        return;
+      }
+      setBackendConfigured(false);
+      sessionStorage.removeItem("backendConfigured");
+      if (!savedCfg?.apiKey) {
+        setNeedsConfig(true);
+      }
+    };
+
     fetch(apiUrl("/api/config"))
       .then((r) => r.json())
-      .then((data) => {
-        if (data.configured) {
-          setModelConfig((prev) => {
-            if (prev?.apiKey) return prev;
-            if (savedCfg?.apiKey) return savedCfg;
-            if (data.base_url && data.model) {
-              return {
-                providerId: savedCfg?.providerId || "custom",
-                apiKey: "",
-                baseUrl: data.base_url,
-                model: data.model,
-              };
-            }
-            return prev;
-          });
-          return;
-        }
-        if (!savedCfg?.apiKey) {
-          setShowSettings(true);
-        }
-      })
+      .then(applyBackendConfig)
       .catch(() => {
-        if (!savedCfg?.apiKey) {
-          setShowSettings(true);
+        if (!hadBackend && !savedCfg?.apiKey) {
+          setNeedsConfig(true);
         }
       });
   }, []);
 
   const handleSaveConfig = async (config: ModelConfig) => {
-    if (!config.apiKey?.trim()) {
+    if (!config.apiKey?.trim() && !backendConfigured) {
       alert("请填写 API Key");
-      return;
+      return false;
     }
-    try {
-      await saveModelConfig(config);
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "配置保存失败");
-      return;
+    if (config.apiKey?.trim()) {
+      try {
+        await saveModelConfig(config);
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : "配置保存失败");
+        return false;
+      }
+      setBackendConfigured(true);
+      sessionStorage.setItem("backendConfigured", "true");
     }
     setModelConfig(config);
+    setNeedsConfig(false);
     localStorage.setItem("modelConfig", JSON.stringify(config));
     window.dispatchEvent(new CustomEvent("memory-agent:config-saved"));
+    return true;
   };
 
   return (
@@ -81,7 +112,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-sm font-bold text-slate-900">MemoryAgent</h1>
-              <p className="text-[10px] text-slate-400">认知记忆架构</p>
+              <p className="text-[10px] text-slate-400">通用助手 · 长期记忆</p>
             </div>
           </div>
           
@@ -105,6 +136,21 @@ export default function Home() {
           </div>
         </div>
       </nav>
+
+      {needsConfig && !backendConfigured && !modelConfig?.apiKey && (
+        <div className="flex-shrink-0 px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between gap-3">
+          <p className="text-xs text-amber-800">
+            尚未配置模型，点击右上角「配置」填写 API Key 后即可对话。
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="text-xs font-medium text-amber-900 hover:underline flex-shrink-0"
+          >
+            去配置
+          </button>
+        </div>
+      )}
 
       {/* 主内容区 */}
       <div className="flex-1 flex overflow-hidden">
@@ -228,6 +274,7 @@ export default function Home() {
         onClose={() => setShowSettings(false)}
         onSave={handleSaveConfig}
         currentConfig={modelConfig || undefined}
+        backendConfigured={backendConfigured}
       />
     </main>
   );

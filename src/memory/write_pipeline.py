@@ -18,6 +18,8 @@ from src.memory.auto_write import (
 )
 from src.utils.config import settings
 from src.memory.provenance import append_l0_turn, l0_path, pick_source_quote
+from src.memory.conflicts import find_conflicts
+from src.memory.type_policy import conflict_strategy, should_llm_extract_for_type
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -27,17 +29,19 @@ logger = logging.getLogger(__name__)
 class TurnWriteOutcome:
     stored: List[dict] = field(default_factory=list)
     deleted: List[dict] = field(default_factory=list)
+    pending_conflicts: List[dict] = field(default_factory=list)
 
     @property
     def stored_ids(self) -> List[str]:
         return [x["memory_id"] for x in self.stored if x.get("memory_id")]
 
 
-def should_use_llm_extract(user_message: str, assistant_message: str) -> bool:
-    if not settings.MEMORY_EXTRACT_ENABLED:
-        return False
-    total = len(user_message or "") + len(assistant_message or "")
-    return total >= settings.MEMORY_EXTRACT_LLM_MIN_CHARS
+def should_use_llm_extract(
+    user_message: str,
+    assistant_message: str,
+    memory_type: MemoryType = MemoryType.USER,
+) -> bool:
+    return should_llm_extract_for_type(memory_type, user_message, assistant_message)
 
 
 def _dedupe_candidates(
@@ -121,12 +125,13 @@ async def persist_turn_memories(
 
     if regex_candidates:
         candidates = regex_candidates
-    elif memory.llm and should_use_llm_extract(user_message, assistant_message):
+    elif memory.llm:
         for item in await extract_memories_from_turn(
             memory.llm, user_message, assistant_message
         ):
             t = TYPE_MAP.get(item["type"], MemoryType.USER)
-            candidates.append((item["content"], t))
+            if should_use_llm_extract(user_message, assistant_message, t):
+                candidates.append((item["content"], t))
 
     candidates = _dedupe_candidates(candidates)
     stored = []
@@ -152,11 +157,38 @@ async def persist_turn_memories(
             "l0_path": rel_l0,
         }
 
+    pending_conflicts: List[dict] = []
+
     for content, mem_type in candidates:
         if is_duplicate(user_id, content):
             continue
         if await _is_duplicate_in_storage(memory, content, user_id, project_id):
             continue
+
+        strategy = conflict_strategy(mem_type)
+        if strategy == "user_prompt" and settings.MEMORY_CONFLICT_UI:
+            rows = await memory.list_memories(
+                user_id=user_id, project_id=project_id, limit=100,
+            )
+            conflicts = find_conflicts(
+                content, rows, user_id=user_id,
+                project_id=project_id, memory_type=mem_type.value,
+            )
+            if conflicts:
+                pending_conflicts.append({
+                    "new_content": content,
+                    "memory_type": mem_type.value,
+                    "candidates": [
+                        {
+                            "memory_id": c.get("memory_id") or c.get("id"),
+                            "content": c.get("content", "")[:300],
+                            "conflict_reason": c.get("conflict_reason", ""),
+                        }
+                        for c in conflicts[:5]
+                    ],
+                })
+                continue
+
         meta = {
             "user_id": user_id,
             "source": "write_pipeline",
@@ -176,6 +208,7 @@ async def persist_turn_memories(
             description=f"自动沉淀: {content[:30]}",
             user_id=user_id,
             metadata=meta,
+            auto_supersede=(strategy != "keep_both"),
         )
         if item:
             stored.append({
@@ -185,4 +218,4 @@ async def persist_turn_memories(
             })
             logger.info(f"Write pipeline stored {item.id} for {user_id}")
 
-    return TurnWriteOutcome(stored=stored)
+    return TurnWriteOutcome(stored=stored, pending_conflicts=pending_conflicts)

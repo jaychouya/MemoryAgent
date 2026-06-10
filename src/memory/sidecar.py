@@ -56,6 +56,8 @@ def build_export_payload(
         tag = item["memory_type"]
         lines.append(f"[{tag}] {item['content']}")
 
+    cursor_rules = build_cursor_rules_block(enriched, user_id, project_id)
+
     return {
         "format": version,
         "user_id": user_id,
@@ -65,5 +67,35 @@ def build_export_payload(
         "count": len(enriched),
         "memories": enriched,
         "prompt_block": "\n".join(lines),
+        "cursor_rules_block": cursor_rules,
         "generated_at": datetime.now().isoformat(),
     }
+
+
+def build_cursor_rules_block(
+    memories: List[Dict[str, Any]],
+    user_id: str,
+    project_id: Optional[str] = None,
+) -> str:
+    scope = project_id or user_id
+    lines = [
+        "---",
+        f"description: MemoryAgent 用户记忆 ({scope})",
+        "alwaysApply: true",
+        "---",
+        "",
+        "# MemoryAgent 注入记忆",
+        "",
+        "回答时遵守以下记忆（来自 memory_export）：",
+        "",
+    ]
+    for item in memories:
+        tag = item.get("memory_type", "user")
+        lines.append(f"- **[{tag}]** {item.get('content', '')}")
+    if not memories:
+        lines.append("- （当前无记忆）")
+    lines.extend([
+        "",
+        "每轮对话前可调用 `memory_recall` 刷新；用户更正偏好时调用 `memory_store`。",
+    ])
+    return "\n".join(lines)

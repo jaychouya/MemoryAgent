@@ -199,6 +199,9 @@ def get_agent_loop(llm_service) -> AgentLoop:
         )
     elif _llm_fingerprint(_agent_loop.llm) != _llm_fingerprint(llm_service):
         _agent_loop.llm = llm_service
+        if _memory_manager:
+            _memory_manager.llm = llm_service
+            _memory_manager.retrieval.llm = llm_service
     return _agent_loop
 
 
@@ -296,6 +299,13 @@ def _memory_updates_from_writes(outcome: Optional[TurnWriteOutcome]) -> List[Mem
     if not outcome:
         return []
     updates = []
+    for conflict in getattr(outcome, "pending_conflicts", None) or []:
+        updates.append(MemoryUpdate(
+            type=conflict.get("memory_type", "user"),
+            content=conflict.get("new_content", "")[:200],
+            layer="memory",
+            action="conflict_pending",
+        ))
     for item in outcome.stored:
         updates.append(MemoryUpdate(
             type=item.get("type", "user"),
@@ -378,12 +388,29 @@ async def _await_observer_for_chat(
     return await _run_observer(request, result, user_id, project_id)
 
 
+def _content_from_loop_out(loop_out: dict) -> str:
+    content = (loop_out.get("content") or "").strip()
+    if content:
+        return content
+    loop_state = loop_out.get("state")
+    if loop_state is not None:
+        final = getattr(loop_state, "final_content", None) or ""
+        if str(final).strip():
+            return str(final).strip()
+        for msg in reversed(getattr(loop_state, "messages", []) or []):
+            if msg.get("role") == "assistant":
+                text = msg.get("content") or ""
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+    return ""
+
+
 def _agent_result_from_loop_out(loop_out: dict) -> AgentResult:
     loop_state = loop_out.get("state")
     if loop_state is None:
         loop_state = LoopState()
     exit_reason = loop_out.get("exit_reason", LoopExitReason.ERROR)
-    content = loop_out.get("content", "") or ""
+    content = _content_from_loop_out(loop_out)
     stop = _REASON_MAP.get(exit_reason, StopReason.ERROR)
     state = AgentState(
         messages=loop_state.messages,
@@ -465,6 +492,7 @@ async def chat_stream(request: ChatRequest):
         if session_key not in sessions:
             sessions[session_key] = []
         loop_out: Dict[str, Any] = {}
+        streamed_chars = 0
         try:
             yield StreamEvent(
                 type=StreamEventType.TOOL_RESULT,
@@ -490,7 +518,21 @@ async def chat_stream(request: ChatRequest):
                 loop_out=loop_out,
                 attachments=[a.model_dump() for a in (request.attachments or [])],
             ):
-                if loop_ev.type == LoopEventType.TOKEN:
+                if loop_ev.type == LoopEventType.MEMORY_INJECTED:
+                    yield StreamEvent(
+                        type=StreamEventType.MEMORY_INJECTED,
+                        content="",
+                        metadata=loop_ev.metadata or {},
+                    ).to_sse()
+                elif loop_ev.type == LoopEventType.RECOVERY:
+                    yield StreamEvent(
+                        type=StreamEventType.RECOVERY,
+                        content=loop_ev.content,
+                        metadata=loop_ev.metadata or {},
+                    ).to_sse()
+                elif loop_ev.type == LoopEventType.TOKEN:
+                    if loop_ev.content:
+                        streamed_chars += len(loop_ev.content)
                     yield streamer.create_token_event(loop_ev.content).to_sse()
                 elif loop_ev.type == LoopEventType.TOOL_CALL:
                     yield streamer.create_tool_call_event(
@@ -508,19 +550,17 @@ async def chat_stream(request: ChatRequest):
             result = _agent_result_from_loop_out(loop_out)
             _persist_session(session_key, request, result)
 
-            for cit in _citations_from_result(result):
-                meta_evt = StreamEvent(
-                    type=StreamEventType.TOOL_RESULT,
-                    content=cit.content_snippet[:200],
-                    metadata={"source": "memory", "citation": cit.model_dump()},
-                )
-                yield meta_evt.to_sse()
-
+            citations = _citations_from_result(result)
             done = streamer.create_done_event()
-            done.metadata["citations"] = [
-                c.model_dump() for c in _citations_from_result(result)
-            ]
-            done.metadata["response"] = result.content
+            done.metadata["citations"] = [c.model_dump() for c in citations]
+            response_text = _content_from_loop_out(loop_out) or (result.content or "")
+            done.metadata["response"] = response_text
+            if not response_text.strip() and streamed_chars == 0:
+                done.metadata["empty_reply"] = True
+                done.metadata["recoverable"] = True
+                yield streamer.create_error_event(
+                    "未收到有效回复，请点击下方「重试」按钮。"
+                ).to_sse()
             yield done.to_sse()
 
             from src.utils.config import settings
@@ -533,10 +573,15 @@ async def chat_stream(request: ChatRequest):
                 )
                 writes = _memory_updates_from_writes(write_outcome)
                 if writes:
+                    meta: Dict[str, Any] = {
+                        "memory_writes": [u.model_dump() for u in writes],
+                    }
+                    if write_outcome.pending_conflicts:
+                        meta["pending_conflicts"] = write_outcome.pending_conflicts
                     yield StreamEvent(
                         type=StreamEventType.MEMORY_WRITES,
                         content="",
-                        metadata={"memory_writes": [u.model_dump() for u in writes]},
+                        metadata=meta,
                     ).to_sse()
         except Exception as e:
             logger.error(f"Stream chat error: {e}", exc_info=True)
@@ -758,7 +803,19 @@ def _apply_persisted_model_config() -> None:
     global global_model_config, _agent_loop
     if global_model_config:
         return
+    from src.utils.config import settings
+
     config = config_manager.load_config()
+    if (not config or not is_usable_api_key(config.get("api_key"))) and is_usable_api_key(
+        settings.LLM_API_KEY
+    ):
+        config = {
+            "api_key": settings.LLM_API_KEY.strip(),
+            "base_url": settings.LLM_BASE_URL.strip(),
+            "model": settings.LLM_MODEL.strip() or "mimo-v2.5-pro",
+            "provider": "xiaomi",
+        }
+        config_manager.save_config(config)
     if not config or not is_usable_api_key(config.get("api_key")):
         return
     global_model_config = {

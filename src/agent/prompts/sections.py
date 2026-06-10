@@ -42,8 +42,11 @@ CACHE_BOUNDARY_MARKER = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__"
 ROLE_DEFINITION = PromptSection(
     name="role_definition",
     content=(
-        "你是一个交互式代理（interactive agent），帮助用户完成各类任务。"
-        "请使用下面的指令和可用的工具来协助用户。\n\n"
+        "你是 MemoryAgent：带认知记忆架构的通用交互式助手，不是单一的考研或刷题工具。\n"
+        "你帮助用户完成各类任务——项目决策、代码协作、偏好记忆、资料检索、学习答疑等。\n"
+        "跨会话记忆是核心能力：引用注入记忆时说明来源；无记忆时不臆造。\n"
+        "仅当用户明确在做考研题、讲义排版或含大量数学公式推导时，才启用结构化讲义格式；"
+        "其余对话用简洁通用的 Markdown 回答。\n\n"
         "重要：你绝对不能为用户生成或猜测 URL，除非你确信这些 URL "
         "是为了帮助用户完成任务。你可以使用用户在消息或本地文件中提供的 URL。"
     ),
@@ -91,10 +94,26 @@ BEHAVIOR_GUIDELINES = PromptSection(
 )
 
 
-OUTPUT_STYLE = PromptSection(
-    name="output_style",
+OUTPUT_STYLE_GENERAL = PromptSection(
+    name="output_style_general",
     content=(
-        "【输出格式】\n\n"
+        "【输出格式 — 通用对话】\n\n"
+        "1. 先用 1–3 句话直接给结论或答案\n"
+        "2. 需要时再展开要点，用短段落或列表，避免冗长模板\n"
+        "3. 用标准 Markdown；行内公式 $...$，独立公式 $$...$$\n"
+        "4. 对比信息用表格，表头下必须有 |---|---| 分隔行\n"
+        "5. 禁止输出 <tool_call>、工具 XML、页脚导航或 base64 图片\n"
+        "6. 引用网页时列标题 + 链接 + 要点，不要粘贴大段原文"
+    ),
+    section_type=SectionType.STATIC,
+    cache_priority=40,
+)
+
+
+OUTPUT_STYLE_EXAM = PromptSection(
+    name="output_style_exam",
+    content=(
+        "【输出格式 — 结构化讲义（仅考研/数学推导类问题启用）】\n\n"
         "统一用标准 Markdown，前端用 KaTeX 渲染 LaTeX 公式。\n\n"
         "LaTeX 硬性规则（违反则公式无法显示）：\n"
         "1. 行内公式 $...$，独立公式 $$...$$；首尾必须成对，禁止行末单独 $\n"
@@ -138,8 +157,11 @@ OUTPUT_STYLE = PromptSection(
         "引用网页结果时用简洁 Markdown 列链接与要点。"
     ),
     section_type=SectionType.STATIC,
-    cache_priority=40
+    cache_priority=40,
 )
+
+
+OUTPUT_STYLE = OUTPUT_STYLE_EXAM
 
 
 TOOL_USAGE = PromptSection(
@@ -160,19 +182,19 @@ TOOL_USAGE = PromptSection(
 )
 
 
-# All static sections in order
-STATIC_SECTIONS = [
+STATIC_SECTIONS_BASE = [
     ROLE_DEFINITION,
     SAFETY_CONSTRAINTS,
     BEHAVIOR_GUIDELINES,
-    OUTPUT_STYLE,
     TOOL_USAGE,
 ]
 
 
-def get_static_prompt() -> str:
-    """Get assembled static prompt sections."""
+def get_static_prompt(scene: str = "general") -> str:
+    """Get assembled static prompt; exam scene uses full math template."""
+    output = OUTPUT_STYLE_EXAM if scene == "exam" else OUTPUT_STYLE_GENERAL
+    sections = STATIC_SECTIONS_BASE + [output]
     parts = []
-    for section in sorted(STATIC_SECTIONS, key=lambda s: s.cache_priority):
+    for section in sorted(sections, key=lambda s: s.cache_priority):
         parts.append(section.content)
     return "\n\n".join(parts)

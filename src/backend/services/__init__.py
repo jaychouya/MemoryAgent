@@ -49,7 +49,7 @@ class LLMService:
             else:
                 api_messages.append({
                     "role": "system", 
-                    "content": """你是MemoryAI，一个专业的AI助手。请遵循以下回答规范：
+                    "content": """你是 MemoryAgent，带长期记忆的通用 AI 助手（不限于考研或刷题）。请遵循以下回答规范：
 
 ## 回答规范
 
@@ -192,7 +192,18 @@ class LLMService:
                     parts.append(delta)
                     if on_token:
                         await on_token(delta)
-            content = self._clean_markdown("".join(parts))
+            raw = "".join(parts)
+            content = self._clean_markdown(raw) if raw.strip() else ""
+            if not content.strip():
+                user_msg = self._extract_user_message(message, messages)
+                content = self._fallback_response(
+                    user_msg,
+                    is_configured=bool(self.client),
+                    error="模型返回为空，请重试或检查模型配置。",
+                )
+                if on_token and not parts:
+                    for ch in content:
+                        await on_token(ch)
             return {
                 "content": content,
                 "stop_reason": finish_reason,

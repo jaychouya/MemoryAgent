@@ -12,12 +12,13 @@ import {
   uploadRawUrl,
 } from "@/lib/api";
 import MarkdownMessage from "@/components/MarkdownMessage";
+import MemoryConflictModal, { PendingConflict } from "@/components/MemoryConflictModal";
 
 interface MemoryWrite {
   type: string;
   content: string;
   layer: string;
-  action: "stored" | "deleted" | "used";
+  action: "stored" | "deleted" | "used" | "conflict_pending";
 }
 
 interface MemoryCitation {
@@ -110,7 +111,7 @@ export default function ChatPanel({
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState("default");
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [showSessions, setShowSessions] = useState(true);
+  const [showSessions, setShowSessions] = useState(false);
   const [showMetadata, setShowMetadata] = useState(true);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [backendConfigured, setBackendConfigured] = useState(false);
@@ -118,6 +119,9 @@ export default function ChatPanel({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sessionBootstrapped = useRef(false);
+  const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
+  const lastRequestRef = useRef<Record<string, unknown> | null>(null);
+  const lastAssistantIdRef = useRef<string | null>(null);
 
   const loadSessions = async (): Promise<Session[]> => {
     try {
@@ -288,14 +292,18 @@ export default function ChatPanel({
     );
   };
 
-  const sendMessage = async () => {
-    if (!input.trim() && pendingAttachments.length === 0) return;
+  const sendMessage = async (opts?: { retry?: boolean }) => {
+    const isRetry = Boolean(opts?.retry);
+    if (!isRetry && !input.trim() && pendingAttachments.length === 0) return;
 
-    const messageText = input.trim();
+    const messageText = isRetry
+      ? String(lastRequestRef.current?.message || "")
+      : input.trim();
+    if (!messageText && !isRetry) return;
     const userId = getUserId();
     let uploadedAttachments: MessageAttachment[] = [];
     try {
-      if (pendingAttachments.length > 0) {
+      if (!isRetry && pendingAttachments.length > 0) {
         const results = await Promise.all(
           pendingAttachments.map(async (att) => {
             const saved = await uploadFile(att.file, userId);
@@ -327,21 +335,23 @@ export default function ChatPanel({
     });
     setPendingAttachments([]);
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: messageText || (uploadedAttachments.length ? `[已上传 ${uploadedAttachments.length} 个附件]` : ""),
-      role: "user",
-      timestamp: new Date(),
-      attachments: uploadedAttachments,
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
+    if (!isRetry) {
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        content: messageText || (uploadedAttachments.length ? `[已上传 ${uploadedAttachments.length} 个附件]` : ""),
+        role: "user",
+        timestamp: new Date(),
+        attachments: uploadedAttachments,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setInput("");
+    }
     setIsLoading(true);
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    const activeConfig = resolveModelConfig(modelConfig);
+    const activeConfig = resolveModelConfig(modelConfig, backendConfigured);
     if (!activeConfig?.apiKey?.trim() && !backendConfigured) {
       setMessages((prev) => [
         ...prev,
@@ -356,25 +366,35 @@ export default function ChatPanel({
       return;
     }
     const streamTimeout = window.setTimeout(() => abortController.abort(), 120_000);
-    const requestBody = {
-      message: messageText,
-      session_id: currentSessionId,
-      user_id: userId,
-      cross_session_memory: crossSessionMemory,
-      attachments: uploadedAttachments.map((a) => ({
-        filename: a.filename,
-        path: a.path,
-        kind: a.kind,
-      })),
-      llm_config: activeConfig?.apiKey?.trim() ? {
-        api_key: activeConfig.apiKey,
-        base_url: activeConfig.baseUrl,
-        model: activeConfig.model || "gpt-4o-mini",
-      } : null,
-    };
+    const requestBody = isRetry && lastRequestRef.current
+      ? lastRequestRef.current
+      : {
+          message: messageText,
+          session_id: currentSessionId,
+          user_id: userId,
+          cross_session_memory: crossSessionMemory,
+          attachments: uploadedAttachments.map((a) => ({
+            filename: a.filename,
+            path: a.path,
+            kind: a.kind,
+          })),
+          llm_config:
+            activeConfig?.apiKey?.trim() && !backendConfigured
+              ? {
+                  api_key: activeConfig.apiKey,
+                  base_url: activeConfig.baseUrl,
+                  model: activeConfig.model || "gpt-4o-mini",
+                }
+              : null,
+        };
+    lastRequestRef.current = requestBody;
+    const assistantId = isRetry && lastAssistantIdRef.current
+      ? lastAssistantIdRef.current
+      : (Date.now() + 1).toString();
+    lastAssistantIdRef.current = assistantId;
 
-    const assistantId = (Date.now() + 1).toString();
-    setStreamingMessageId(assistantId);
+    const runStream = async (streamAssistantId: string, autoRetry: boolean) => {
+    setStreamingMessageId(streamAssistantId);
     let streamedContent = "";
     let displayContent = "";
     const thinkingHint = "正在搜索记忆并生成回复…";
@@ -384,15 +404,31 @@ export default function ChatPanel({
     let memoryCitations: MemoryCitation[] = [];
     let memoryWrites: MemoryWrite[] = [];
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: assistantId,
-        content: thinkingHint,
-        role: "assistant",
-        timestamp: new Date(),
-      },
-    ]);
+    if (!autoRetry) {
+      if (isRetry) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamAssistantId
+              ? { ...m, content: thinkingHint, metadata: undefined }
+              : m
+          )
+        );
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: streamAssistantId,
+            content: thinkingHint,
+            role: "assistant",
+            timestamp: new Date(),
+          },
+        ]);
+      }
+    }
+
+    let emptyReply = false;
+    let recoverable = false;
+    let willRetry = false;
 
     const applyStreamPayload = (payload: {
       type: string;
@@ -404,30 +440,71 @@ export default function ChatPanel({
         displayContent = streamedContent;
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, content: displayContent } : m
+            m.id === streamAssistantId ? { ...m, content: displayContent } : m
           )
         );
       } else if (payload.type === "error") {
-        displayContent = payload.content || displayContent || "请求失败，请稍后重试。";
-        streamedContent = displayContent;
+        const errText = payload.content || "";
+        const isEmptyReplyHint = errText.includes("未收到有效回复");
+        if (!(isEmptyReplyHint && streamedContent.trim())) {
+          displayContent = errText || displayContent || "请求失败，请稍后重试。";
+          streamedContent = displayContent;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === streamAssistantId ? { ...m, content: displayContent } : m
+            )
+          );
+        }
+        setIsLoading(false);
+      } else if (payload.type === "memory_injected") {
+        const cits = (payload.metadata?.citations as MemoryCitation[]) || [];
+        memoryCitations = cits;
+        memoriesUsed = cits.map((c) => c.content_snippet);
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, content: displayContent } : m
+            m.id === streamAssistantId
+              ? {
+                  ...m,
+                  metadata: {
+                    ...m.metadata,
+                    memory_citations: cits,
+                    memories_used: memoriesUsed,
+                  },
+                }
+              : m
           )
         );
-        setIsLoading(false);
+      } else if (payload.type === "recovery") {
+        const retry = payload.metadata?.retry;
+        const max = payload.metadata?.max_retries;
+        displayContent = `模型未返回文字，正在自动重试 (${retry}/${max})…`;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamAssistantId ? { ...m, content: displayContent } : m
+          )
+        );
       } else if (payload.type === "done") {
         const response = payload.metadata?.response;
+        emptyReply = Boolean(payload.metadata?.empty_reply);
+        recoverable = Boolean(payload.metadata?.recoverable);
         if (typeof response === "string" && response.trim()) {
-          if (!streamedContent || streamedContent === thinkingHint) {
+          if (
+            !streamedContent
+            || streamedContent === thinkingHint
+            || response.length > streamedContent.length
+          ) {
             streamedContent = response;
           }
           displayContent = streamedContent;
         }
+        if (payload.metadata?.citations && Array.isArray(payload.metadata.citations)) {
+          memoryCitations = payload.metadata.citations as MemoryCitation[];
+          memoriesUsed = memoryCitations.map((c) => c.content_snippet);
+        }
         if (displayContent && displayContent !== thinkingHint) {
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantId ? { ...m, content: displayContent } : m
+              m.id === streamAssistantId ? { ...m, content: displayContent } : m
             )
           );
         }
@@ -440,7 +517,7 @@ export default function ChatPanel({
         displayContent = `正在调用 ${payload.content}…`;
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, content: displayContent } : m
+            m.id === streamAssistantId ? { ...m, content: displayContent } : m
           )
         );
       } else if (
@@ -452,7 +529,7 @@ export default function ChatPanel({
         displayContent = payload.content as string;
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, content: displayContent } : m
+            m.id === streamAssistantId ? { ...m, content: displayContent } : m
           )
         );
       } else if (payload.type === "tool_result" && payload.metadata?.citation) {
@@ -469,6 +546,12 @@ export default function ChatPanel({
         && payload.metadata?.memory_writes
       ) {
         memoryWrites = payload.metadata.memory_writes as MemoryWrite[];
+      }
+      if (payload.type === "memory_writes" && payload.metadata?.pending_conflicts) {
+        const conflicts = payload.metadata.pending_conflicts as PendingConflict[];
+        if (conflicts.length > 0) {
+          setPendingConflict(conflicts[0]);
+        }
       }
     };
 
@@ -516,12 +599,23 @@ export default function ChatPanel({
           (streamedContent && streamedContent !== thinkingHint)
           || (displayContent && displayContent !== thinkingHint)
         );
-        const fallbackContent = toolsCalled.length > 0
-          ? "工具已执行，但模型未返回最终文字，请重试。"
-          : "未收到回复，请检查左上角模型配置或稍后重试。";
+        if (!hasReply && recoverable && !autoRetry) {
+          willRetry = true;
+          streamedContent = "";
+          displayContent = thinkingHint;
+          await runStream(streamAssistantId, true);
+          return;
+        }
+        const fallbackContent = emptyReply
+          ? (toolsCalled.length > 0
+            ? "工具已执行，但模型未返回最终文字。已自动重试仍失败，请再点发送。"
+            : "未收到回复，请检查模型配置或稍后重试。")
+          : (toolsCalled.length > 0
+            ? "工具已执行，但模型未返回最终文字，请重试。"
+            : "未收到回复，请检查左上角模型配置或稍后重试。");
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId
+            m.id === streamAssistantId
               ? {
                   ...m,
                   content: hasReply
@@ -534,7 +628,7 @@ export default function ChatPanel({
                     memories_used: memoriesUsed,
                     memory_citations: memoryCitations,
                     memory_writes: memoryWrites,
-                    stop_reason: "end_turn",
+                    stop_reason: hasReply ? "end_turn" : "empty_reply",
                   },
                 }
               : m
@@ -544,7 +638,7 @@ export default function ChatPanel({
           window.dispatchEvent(new CustomEvent("memory-agent:writes"));
         }
         loadSessions();
-        return;
+        return true;
       }
 
       if (!streamResponse.ok) {
@@ -559,7 +653,7 @@ export default function ChatPanel({
         }
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, content: errMsg } : m
+            m.id === streamAssistantId ? { ...m, content: errMsg } : m
           )
         );
         return;
@@ -575,7 +669,7 @@ export default function ChatPanel({
       const data = await response.json();
 
       const assistantMessage: Message = {
-        id: assistantId,
+        id: streamAssistantId,
         content: data.response,
         role: "assistant",
         timestamp: new Date(),
@@ -600,7 +694,7 @@ export default function ChatPanel({
       if (error.name === "AbortError") {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId
+            m.id === streamAssistantId
               ? { ...m, content: streamedContent || "（已终止回复）" }
               : m
           )
@@ -609,7 +703,7 @@ export default function ChatPanel({
         console.error("Failed to send message:", error);
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId
+            m.id === streamAssistantId
               ? {
                   ...m,
                   content: "连接失败，请确认后端已启动（端口 8000）并重试。",
@@ -620,10 +714,20 @@ export default function ChatPanel({
       }
     } finally {
       window.clearTimeout(streamTimeout);
-      setIsLoading(false);
-      setStreamingMessageId(null);
-      abortControllerRef.current = null;
+      if (!willRetry) {
+        setIsLoading(false);
+        setStreamingMessageId(null);
+        abortControllerRef.current = null;
+      }
     }
+    };
+
+    await runStream(assistantId, false);
+  };
+
+  const retryLastMessage = () => {
+    if (isLoading || !lastRequestRef.current) return;
+    void sendMessage({ retry: true });
   };
 
   const stopGeneration = () => {
@@ -858,6 +962,26 @@ export default function ChatPanel({
                     : "bg-slate-100 text-slate-800 rounded-bl-sm"
                 }`}
               >
+                {message.role === "assistant" && message.metadata?.memory_citations && (
+                  <div className="mb-2 text-[10px] rounded-lg border border-purple-100 bg-purple-50 p-2 text-purple-800">
+                    {message.metadata.memory_citations.length > 0 ? (
+                      <>
+                        <div className="font-medium mb-1">
+                          本轮注入 {message.metadata.memory_citations.length} 条记忆
+                        </div>
+                        <ul className="space-y-0.5 text-purple-700">
+                          {message.metadata.memory_citations.map((c) => (
+                            <li key={c.memory_id} className="line-clamp-2">
+                              · [{c.memory_type}] {c.content_snippet}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <span className="text-slate-500">本轮未命中记忆</span>
+                    )}
+                  </div>
+                )}
                 {message.role === "assistant" ? (
                   <MarkdownMessage content={message.content} />
                 ) : (
@@ -867,6 +991,20 @@ export default function ChatPanel({
                 )}
                 {streamingMessageId === message.id && isLoading && (
                   <span className="inline-block w-0.5 h-3.5 ml-0.5 bg-indigo-500 animate-pulse align-middle" />
+                )}
+                {message.role === "assistant"
+                  && !isLoading
+                  && (message.metadata?.stop_reason === "empty_reply"
+                    || message.content.includes("未收到有效回复")
+                    || message.content.includes("未收到回复"))
+                  && lastRequestRef.current && (
+                  <button
+                    type="button"
+                    onClick={retryLastMessage}
+                    className="mt-2 px-3 py-1 text-[11px] font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                  >
+                    重试
+                  </button>
                 )}
                 {renderMessageAttachments(message.attachments)}
                 <p className={`text-[10px] mt-1 ${message.role === "user" ? "text-indigo-200" : "text-slate-400"}`}>
@@ -1001,7 +1139,8 @@ export default function ChatPanel({
               </button>
             ) : (
               <button
-                onClick={sendMessage}
+                type="button"
+                onClick={() => void sendMessage()}
                 disabled={!input.trim() && pendingAttachments.length === 0}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-[13px] font-medium flex items-center gap-1.5 flex-shrink-0"
               >
@@ -1014,6 +1153,17 @@ export default function ChatPanel({
           </div>
         </div>
       </div>
+      {pendingConflict && (
+        <MemoryConflictModal
+          conflict={pendingConflict}
+          sessionId={currentSessionId}
+          onResolved={() => {
+            setPendingConflict(null);
+            window.dispatchEvent(new CustomEvent("memory-agent:writes"));
+          }}
+          onDismiss={() => setPendingConflict(null)}
+        />
+      )}
     </div>
   );
 }

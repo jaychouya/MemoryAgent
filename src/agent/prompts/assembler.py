@@ -15,8 +15,7 @@ from src.agent.prompts.sections import (
     PromptSection,
     SectionType,
     CACHE_BOUNDARY_MARKER,
-    STATIC_SECTIONS,
-    get_static_prompt
+    get_static_prompt,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,13 +33,14 @@ class PromptAssembler:
     """
     
     def __init__(self):
-        self._static_cache: Optional[str] = None
+        self._static_cache: Dict[str, str] = {}
     
     def assemble(
         self,
         environment_info: Dict[str, str] = None,
         memory_index: str = None,
-        custom_sections: List[PromptSection] = None
+        custom_sections: List[PromptSection] = None,
+        scene: str = "general",
     ) -> str:
         """
         Assemble complete System Prompt.
@@ -55,8 +55,7 @@ class PromptAssembler:
         """
         parts = []
         
-        # 1. Static sections (cacheable)
-        parts.append(self._get_static_cache())
+        parts.append(self._get_static_cache(scene))
         
         # 2. Cache boundary
         parts.append(f"\n{'='*50}")
@@ -76,11 +75,13 @@ class PromptAssembler:
         
         return "\n\n".join(parts)
     
-    def _get_static_cache(self) -> str:
-        """Get cached static prompt."""
+    def _get_static_cache(self, scene: str = "general") -> str:
+        cache_key = scene or "general"
         if self._static_cache is None:
-            self._static_cache = get_static_prompt()
-        return self._static_cache
+            self._static_cache = {}
+        if cache_key not in self._static_cache:
+            self._static_cache[cache_key] = get_static_prompt(cache_key)
+        return self._static_cache[cache_key]
     
     def _build_environment_section(self, info: Dict[str, str]) -> str:
         """Build environment information section."""
@@ -98,18 +99,12 @@ class PromptAssembler:
         return "\n".join(lines)
     
     def _build_memory_section(self, memory_index: str) -> str:
-        """Build memory index section."""
-        return f"""## 记忆索引
+        return f"""## 强制记忆（不可忽略）
 
-你有一个持久记忆系统。以下是当前存储的记忆索引：
-
-{memory_index}
-
-请根据用户的问题，检索和使用相关记忆。如果没有找到相关记忆，请直接回答用户的问题，不要创建计划。"""
+{memory_index}"""
     
     def invalidate_cache(self):
-        """Invalidate static cache (e.g., after config change)."""
-        self._static_cache = None
+        self._static_cache = {}
 
 
 # Global assembler instance

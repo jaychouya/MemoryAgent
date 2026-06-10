@@ -134,8 +134,9 @@ const PROVIDERS: ModelProvider[] = [
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (config: ModelConfig) => void;
+  onSave: (config: ModelConfig) => Promise<boolean>;
   currentConfig?: ModelConfig;
+  backendConfigured?: boolean;
 }
 
 export interface ModelConfig {
@@ -145,7 +146,13 @@ export interface ModelConfig {
   model: string;
 }
 
-export default function SettingsPanel({ isOpen, onClose, onSave, currentConfig }: SettingsPanelProps) {
+export default function SettingsPanel({
+  isOpen,
+  onClose,
+  onSave,
+  currentConfig,
+  backendConfigured = false,
+}: SettingsPanelProps) {
   const [selectedProvider, setSelectedProvider] = useState<string>(
     currentConfig?.providerId || "dashscope"
   );
@@ -164,26 +171,39 @@ export default function SettingsPanel({ isOpen, onClose, onSave, currentConfig }
     }
   };
 
-  const handleSave = () => {
-    onSave({
-      providerId: selectedProvider,
-      apiKey,
-      baseUrl: baseUrl || provider?.baseUrl || "",
-      model: model || provider?.defaultModel || ""
-    });
-    onClose();
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const ok = await onSave({
+        providerId: selectedProvider,
+        apiKey,
+        baseUrl: baseUrl || provider?.baseUrl || "",
+        model: model || provider?.defaultModel || "",
+      });
+      if (ok) onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl w-full max-w-lg mx-4 overflow-hidden shadow-xl">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <button
+        type="button"
+        aria-label="关闭配置"
+        className="absolute inset-0 bg-black/25"
+        onClick={onClose}
+      />
+      <div className="relative w-full max-w-sm h-full max-h-screen bg-white shadow-2xl flex flex-col border-l border-slate-200">
+        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex-shrink-0">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">模型配置</h2>
+            <h2 className="text-base font-semibold text-slate-900">模型配置</h2>
             <button
+              type="button"
               onClick={onClose}
               className="w-8 h-8 rounded-lg hover:bg-slate-200 flex items-center justify-center transition-colors"
             >
@@ -194,8 +214,12 @@ export default function SettingsPanel({ isOpen, onClose, onSave, currentConfig }
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="p-4 space-y-3 overflow-y-auto flex-1">
+          {backendConfigured && !apiKey.trim() && (
+            <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+              服务端已配置，可直接对话。仅修改模型时 Key 可留空。
+            </p>
+          )}
           {/* Provider Selection */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -290,7 +314,7 @@ export default function SettingsPanel({ isOpen, onClose, onSave, currentConfig }
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+        <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2 text-slate-700 hover:bg-slate-200 rounded-lg transition-colors text-sm font-medium"
@@ -298,11 +322,12 @@ export default function SettingsPanel({ isOpen, onClose, onSave, currentConfig }
             取消
           </button>
           <button
-            onClick={handleSave}
-            disabled={!apiKey.trim()}
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={(!apiKey.trim() && !backendConfigured) || saving}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
           >
-            保存配置
+            {saving ? "保存中…" : "保存配置"}
           </button>
         </div>
       </div>

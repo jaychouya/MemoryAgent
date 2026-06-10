@@ -242,6 +242,48 @@ async def run_memory_eval():
     return report.to_dict()
 
 
+class ConflictResolveRequest(BaseModel):
+    user_id: str = "anonymous"
+    new_content: str
+    memory_type: str = "user"
+    keep_existing_id: Optional[str] = None
+    supersede_ids: List[str] = []
+    project_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+@router.post("/memory/conflicts/resolve")
+async def resolve_memory_conflict(body: ConflictResolveRequest):
+    from src.memory.service import get_shared_memory_manager
+    from src.memory.types import MemoryType
+
+    manager = get_shared_memory_manager()
+    if body.keep_existing_id and not body.supersede_ids:
+        return {"ok": True, "kept": body.keep_existing_id, "stored": None}
+
+    try:
+        mem_type = MemoryType(body.memory_type)
+    except ValueError:
+        mem_type = MemoryType.USER
+
+    if body.keep_existing_id:
+        for old_id in body.supersede_ids:
+            await manager.resolve_conflict(body.keep_existing_id, old_id, body.user_id)
+        return {"ok": True, "kept": body.keep_existing_id, "stored": None}
+
+    item = await manager.store_resolved_conflict(
+        content=body.new_content,
+        memory_type=mem_type,
+        supersede_ids=body.supersede_ids,
+        user_id=body.user_id,
+        project_id=body.project_id,
+        session_id=body.session_id,
+    )
+    if not item:
+        raise HTTPException(status_code=400, detail="store_failed")
+    return {"ok": True, "stored": item.id, "superseded": body.supersede_ids}
+
+
 @router.delete("/memories/{memory_id}")
 async def delete_memory_endpoint(
     memory_id: str,

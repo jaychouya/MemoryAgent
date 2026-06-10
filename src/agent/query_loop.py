@@ -6,6 +6,7 @@ Per turn: prepare messages → call model → needsFollowUp? → run tools → a
 
 import inspect
 import logging
+import re
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Set, Tuple
@@ -23,7 +24,31 @@ from src.agent.tool_executor import (
 
 logger = logging.getLogger(__name__)
 
+_WEB_HINTS = re.compile(
+    r"https?://|www\.|搜索|查一下|网上|新闻|链接|网页|web_search|fetch",
+    re.I,
+)
+
 MAX_OUTPUT_RECOVERY = 3
+
+
+def _latest_user_text(messages: List[Dict]) -> str:
+    for msg in reversed(messages or []):
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return " ".join(
+                p.get("text", "") for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            )
+    return ""
+
+
+def _query_needs_web(messages: List[Dict]) -> bool:
+    return bool(_WEB_HINTS.search(_latest_user_text(messages)))
 
 
 def _maybe_compress_tool_results(results: List[Dict]) -> List[Dict]:
@@ -66,6 +91,8 @@ class LoopEventType(str, Enum):
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     TURN_START = "turn_start"
+    MEMORY_INJECTED = "memory_injected"
+    RECOVERY = "recovery"
     DONE = "done"
     ERROR = "error"
 
@@ -123,7 +150,7 @@ async def execute_query_loop(
                 all_tools = {t.name for t in tool_registry.get_all()}
                 web_tools = {"web_search", "web_fetch"}
                 if not state.tools_called:
-                    allowed_tools = web_tools
+                    allowed_tools = web_tools if _query_needs_web(messages_for_query) else set()
                 elif "web_search" in state.tools_called and "web_fetch" not in state.tools_called:
                     allowed_tools = {"web_fetch"}
                 else:
@@ -180,7 +207,7 @@ async def execute_query_loop(
 
         tool_calls = response.get("tool_calls") or []
         text = response.get("content") or ""
-        emitted_text_token = False
+        emitted_text_token = streamed_tokens
         if text and not streamed_tokens and not response.get("streamed"):
             emit(LoopEvent(LoopEventType.TOKEN, content=text))
             emitted_text_token = True
@@ -191,23 +218,46 @@ async def execute_query_loop(
                 and state.tools_called
                 and state.empty_after_tools_retries < MAX_EMPTY_AFTER_TOOLS_RETRIES
             ):
+                retry_n = state.empty_after_tools_retries + 1
+                emit(LoopEvent(
+                    LoopEventType.RECOVERY,
+                    content="empty_after_tools",
+                    metadata={
+                        "reason": "empty_after_tools",
+                        "retry": retry_n,
+                        "max_retries": MAX_EMPTY_AFTER_TOOLS_RETRIES,
+                    },
+                ))
                 state = replace(
                     state,
                     messages=state.messages + [{
                         "role": "user",
                         "content": EMPTY_AFTER_TOOLS_NUDGE,
                     }],
-                    empty_after_tools_retries=state.empty_after_tools_retries + 1,
+                    empty_after_tools_retries=retry_n,
                     turn_count=state.turn_count - 1,
                 )
                 continue
 
             if not text.strip() and state.tools_called:
                 text = _summarize_tool_results(state.messages)
+                if not text.strip():
+                    emit(LoopEvent(
+                        LoopEventType.ERROR,
+                        content="工具已执行，但模型未返回最终文字。",
+                        metadata={
+                            "reason": "empty_reply",
+                            "recoverable": True,
+                        },
+                    ))
 
             exit_reason = LoopExitReason.COMPLETED
             from src.agent.output_format import normalize_agent_output
             final_content = normalize_agent_output(text)
+            if not final_content.strip() and streamed_tokens and text.strip():
+                final_content = text.strip()
+            if not final_content.strip() and state.tools_called:
+                final_content = _summarize_tool_results(state.messages)
             if final_content.strip() and not emitted_text_token:
                 emit(LoopEvent(LoopEventType.TOKEN, content=final_content))
             state = replace(

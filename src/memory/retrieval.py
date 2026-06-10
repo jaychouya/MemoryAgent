@@ -66,11 +66,16 @@ class MemoryRetrieval:
         query: str,
         user_id: str = None,
         project_id: str = None,
-        limit: int = 5
+        limit: int = 5,
+        fast: bool = False,
     ) -> List[Dict]:
         from src.utils import as_int
 
         limit = as_int(limit, 5)
+        recall_fast = fast and settings.MEMORY_RECALL_FAST
+        pool = settings.RERANK_CANDIDATE_POOL if settings.RERANK_ENABLED else limit * 2
+        if recall_fast:
+            pool = min(pool, max(limit * 2, 8))
         search_query = query or ""
         if (
             settings.MEMORY_QUERY_REWRITE_ENABLED
@@ -82,7 +87,6 @@ class MemoryRetrieval:
             )
             search_query = rewritten
 
-        pool = settings.RERANK_CANDIDATE_POOL if settings.RERANK_ENABLED else limit * 2
         keyword_results = self.storage.index.search(
             query=search_query,
             user_id=user_id,
@@ -142,7 +146,11 @@ class MemoryRetrieval:
 
         if query and results and settings.RERANK_ENABLED:
             results = await rerank_candidates(
-                query or search_query, results, top_k=pool, llm_service=self.llm
+                query or search_query,
+                results,
+                top_k=pool,
+                llm_service=self.llm,
+                use_llm=settings.RERANK_USE_LLM and not recall_fast,
             )
         else:
             results = results[:limit]
@@ -154,28 +162,30 @@ class MemoryRetrieval:
             if "selection_reason" not in result:
                 result["selection_reason"] = selection_reason
 
-        results = await self._enrich_provenance(results[:pool])
-        return judge_memories(
+        judged = judge_memories(
             query or search_query,
-            results,
+            results[:pool],
             user_id=user_id,
             project_id=project_id,
             limit=limit,
         )
+        return await self._enrich_provenance(judged)
 
     async def _enrich_provenance(self, results: List[Dict]) -> List[Dict]:
+        import asyncio
         from src.utils.config import settings
 
-        if not settings.PROVENANCE_ENABLED:
+        if not settings.PROVENANCE_ENABLED or not results:
             return results
-        for row in results:
+
+        async def _enrich_row(row: Dict) -> Dict:
             mid = row.get("memory_id") or row.get("id")
             if not mid:
-                continue
+                return row
             try:
                 item = await self.storage.retrieve(mid)
                 if not item:
-                    continue
+                    return row
                 for key in (
                     "evidence_level",
                     "source_session_id",
@@ -193,7 +203,9 @@ class MemoryRetrieval:
                     row["description"] = item.description
             except Exception as e:
                 logger.debug(f"Provenance enrich skip {mid}: {e}")
-        return results
+            return row
+
+        return list(await asyncio.gather(*[_enrich_row(dict(r)) for r in results]))
 
     def _normalize_hybrid_results(self, merged: List[Dict], limit: int) -> List[Dict]:
         normalized = []
