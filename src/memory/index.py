@@ -196,7 +196,10 @@ class MemoryIndex:
                     else:
                         item["score"] = 0.3
                 else:
-                    item["score"] = item.get("importance", 0.5)
+                    try:
+                        item["score"] = float(item.get("importance") or 0.5)
+                    except (TypeError, ValueError):
+                        item["score"] = 0.5
                 item["id"] = item.get("memory_id", "")
                 results.append(item)
             

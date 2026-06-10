@@ -45,15 +45,15 @@ async def test_write_pipeline_provenance_metadata(monkeypatch):
     try:
         mgr = MemoryManager(storage_dir=str(Path(tmp) / "memories"))
         tag = uuid.uuid4().hex[:6]
-        ids = await persist_turn_memories(
+        outcome = await persist_turn_memories(
             mgr,
             "我讨厌使用 mock 数据库做测试",
             "明白了",
             user_id=f"pv_{tag}",
             session_id=f"sess_{tag}",
         )
-        assert ids
-        mem = await mgr.storage.retrieve(ids[0])
+        assert outcome.stored
+        mem = await mgr.storage.retrieve(outcome.stored_ids[0])
         assert mem.metadata.get("evidence_level") == "L1"
         assert mem.metadata.get("source_session_id") == f"sess_{tag}"
         assert mem.metadata.get("source_quote")

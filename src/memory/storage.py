@@ -185,8 +185,9 @@ class MemoryStorage:
                     # Simple text matching
                     if query:
                         query_lower = query.lower()
-                        if (query_lower in memory.description.lower() or 
-                            query_lower in memory.content.lower()):
+                        desc = (memory.description or "").lower()
+                        body = (memory.content or "").lower()
+                        if query_lower in desc or query_lower in body:
                             results.append(memory)
                     else:
                         results.append(memory)

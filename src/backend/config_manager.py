@@ -45,8 +45,11 @@ class ConfigManager:
         }
     }
     
-    def __init__(self, config_dir: str = ".memoryai"):
-        self.config_dir = Path(config_dir)
+    def __init__(self, config_dir: Optional[str] = None):
+        if config_dir is None:
+            self.config_dir = Path(__file__).resolve().parents[2] / ".memoryai"
+        else:
+            self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.config_file = self.config_dir / "config.json"
     

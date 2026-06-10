@@ -2,11 +2,58 @@
 
 import json
 import logging
-from typing import Dict, List, Any, Optional
+import mimetypes
+from typing import Dict, List, Any, Optional, Tuple, Union
 from datetime import datetime
 from pathlib import Path
 
+from src.agent.multimodal import MultimodalProcessor
+
 logger = logging.getLogger(__name__)
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def build_user_message_content(
+    message: str,
+    attachments: Optional[List[Dict[str, str]]] = None,
+) -> Tuple[Union[str, List[Dict[str, Any]]], List[Dict[str, str]]]:
+    processor = MultimodalProcessor()
+    parts: List[Dict[str, Any]] = []
+    meta: List[Dict[str, str]] = []
+
+    if (message or "").strip():
+        parts.append({"type": "text", "text": message.strip()})
+
+    for att in attachments or []:
+        path = att.get("path", "")
+        filename = att.get("filename", Path(path).name)
+        kind = att.get("kind", "file")
+        if not path or not Path(path).exists():
+            continue
+        suffix = Path(path).suffix.lower()
+        is_image = kind == "image" or suffix in IMAGE_EXTENSIONS
+        if is_image:
+            img = processor.process_image(path)
+            if img and img.image_data:
+                mime, _ = mimetypes.guess_type(path)
+                mime = mime or "image/jpeg"
+                parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{img.image_data}"},
+                })
+                meta.append({"filename": filename, "kind": "image", "path": path})
+        else:
+            file_content = processor.process_file(path)
+            if file_content and file_content.text:
+                parts.append({"type": "text", "text": file_content.text})
+                meta.append({"filename": filename, "kind": "file", "path": path})
+
+    if not parts:
+        return message or "（空消息）", meta
+    if len(parts) == 1 and parts[0]["type"] == "text":
+        return parts[0]["text"], meta
+    return parts, meta
 
 
 class ChatExporter:

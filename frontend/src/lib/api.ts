@@ -1,5 +1,124 @@
 export const DEFAULT_USER_ID = "demo-user";
 
+export const API_ORIGIN =
+  typeof window !== "undefined"
+    ? process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000"
+    : "http://localhost:8000";
+
+export function apiUrl(path: string): string {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${API_ORIGIN}${p}`;
+}
+
+export function streamChatUrl(): string {
+  return apiUrl("/api/chat/stream");
+}
+
+export function uploadUrl(userId: string): string {
+  return `${API_ORIGIN}/api/upload?user_id=${encodeURIComponent(userId)}`;
+}
+
+export function uploadRawUrl(userId: string, filename: string): string {
+  return `${API_ORIGIN}/api/uploads/${encodeURIComponent(userId)}/${encodeURIComponent(filename)}/raw`;
+}
+
+export async function uploadFile(
+  file: File,
+  userId: string
+): Promise<{ filename: string; path: string; size: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  const headers: Record<string, string> = {};
+  const apiKey = getSidecarApiKey();
+  if (apiKey) headers["X-API-Key"] = apiKey;
+  const res = await fetch(uploadUrl(userId), { method: "POST", body: form, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || `上传失败 (${res.status})`);
+  }
+  return res.json();
+}
+
+export function streamChatHeaders(): HeadersInit {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const apiKey = getSidecarApiKey();
+  if (apiKey) headers["X-API-Key"] = apiKey;
+  return headers;
+}
+
+export interface StoredModelConfig {
+  providerId: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+export function getStoredModelConfig(): StoredModelConfig | null {
+  if (typeof window === "undefined") return null;
+  const saved = localStorage.getItem("modelConfig");
+  if (!saved) return null;
+  try {
+    const parsed = JSON.parse(saved) as StoredModelConfig;
+    if (!parsed.apiKey?.trim()) return null;
+    return {
+      providerId: parsed.providerId || "custom",
+      apiKey: parsed.apiKey.trim(),
+      baseUrl: (parsed.baseUrl || "").trim(),
+      model: (parsed.model || "").trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function resolveModelConfig(
+  modelConfig?: StoredModelConfig | null
+): StoredModelConfig | null {
+  const stored = getStoredModelConfig();
+  if (stored?.apiKey) return stored;
+  if (modelConfig?.apiKey?.trim()) {
+    return {
+      providerId: modelConfig.providerId || "custom",
+      apiKey: modelConfig.apiKey.trim(),
+      baseUrl: (modelConfig.baseUrl || "").trim(),
+      model: (modelConfig.model || "").trim(),
+    };
+  }
+  return null;
+}
+
+export async function saveModelConfig(config: {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}): Promise<void> {
+  const res = await fetch(apiUrl("/api/config"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: config.apiKey.trim(),
+      base_url: config.baseUrl.trim(),
+      model: config.model.trim(),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || "配置保存失败");
+  }
+}
+
+export async function fetchBackendConfigured(): Promise<boolean> {
+  try {
+    const res = await fetch(apiUrl("/api/config"));
+    const data = await res.json();
+    return !!data.configured;
+  } catch {
+    return false;
+  }
+}
+
 export function getUserId(): string {
   if (typeof window === "undefined") return DEFAULT_USER_ID;
   return localStorage.getItem("memoryagent_user_id") || DEFAULT_USER_ID;
@@ -30,5 +149,6 @@ export async function apiFetch(
   }
   const apiKey = getSidecarApiKey();
   if (apiKey) headers.set("X-API-Key", apiKey);
-  return fetch(path, { ...init, headers });
+  const url = path.startsWith("http") ? path : apiUrl(path);
+  return fetch(url, { ...init, headers });
 }

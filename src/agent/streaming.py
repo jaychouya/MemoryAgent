@@ -16,6 +16,7 @@ class StreamEventType(str, Enum):
     TOOL_RESULT = "tool_result"
     ERROR = "error"
     DONE = "done"
+    MEMORY_WRITES = "memory_writes"
 
 
 @dataclass

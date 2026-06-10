@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from fastapi.responses import StreamingResponse, FileResponse
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Dict, Any, Optional, AsyncGenerator
 import logging
 import json
@@ -14,7 +14,13 @@ from src.agent.query_loop import LoopEventType
 from src.agent.loop_state import LoopExitReason, LoopState
 from src.agent.streaming import StreamingManager, StreamEvent, StreamEventType
 from src.agent.tools.registry import get_tool_registry, ToolRegistry
-from src.agent.tools.builtin import MemorySearchTool, MemoryStoreTool, ContextRetrieveTool
+from src.agent.tools.builtin import (
+    ContextRetrieveTool,
+    MemorySearchTool,
+    MemoryStoreTool,
+    WebFetchTool,
+    WebSearchTool,
+)
 from src.agent.tools.advanced import SemanticPatchTool, SkillSearchTool, SkillCreateTool, TraceAnalysisTool
 from src.agent.plans import (
     PlanModeManager,
@@ -25,11 +31,13 @@ from src.agent.plans import (
 from src.memory.manager import MemoryManager
 from src.memory.service import get_shared_memory_manager
 from src.memory.observer import MemoryObserver
+from src.memory.write_pipeline import TurnWriteOutcome
 from src.memory.citations import MemoryCitation
 from src.skills.graph import SkillGraph
 from src.agent.reflection.tracer import ExecutionTracer
 from src.backend.chat_utils import ChatExporter, FileUploader
 from src.backend.config_manager import ConfigManager
+from src.backend.llm_keys import is_usable_api_key
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -81,12 +89,26 @@ class ModelConfigRequest(BaseModel):
     model: str
 
 
+class AttachmentItem(BaseModel):
+    filename: str
+    path: str
+    kind: str = "file"
+
+
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=10000)
+    message: str = Field(default="", max_length=10000)
     session_id: str = Field(default="default")
     user_id: str = Field(default="anonymous")
     project_id: Optional[str] = Field(default=None, description="Repo/project scope for memories")
+    cross_session_memory: bool = Field(default=False)
     llm_config: Optional[ModelConfigRequest] = None
+    attachments: Optional[List[AttachmentItem]] = None
+
+    @model_validator(mode="after")
+    def require_message_or_attachments(self):
+        if not (self.message or "").strip() and not self.attachments:
+            raise ValueError("message or attachments required")
+        return self
 
 
 class MemoryUpdate(BaseModel):
@@ -126,6 +148,24 @@ class ChatResponse(BaseModel):
     decision_explanation: Optional[DecisionExplanation] = None
 
 
+def _llm_fingerprint(llm_service: LLMService) -> tuple:
+    return (llm_service.api_key or "", llm_service.model or "", llm_service.base_url or "")
+
+
+def _llm_not_ready_message(request: ChatRequest, llm: LLMService) -> Optional[str]:
+    if llm.client:
+        return None
+    if request.llm_config and not is_usable_api_key(request.llm_config.api_key):
+        return "API Key 无效或过短，请在左上角「配置」填写真实密钥后保存。"
+    if request.llm_config and is_usable_api_key(request.llm_config.api_key):
+        return "模型客户端初始化失败，请检查 API 地址是否正确后重新保存配置。"
+    if global_model_config and is_usable_api_key(global_model_config.get("api_key")):
+        return "服务端已保存配置但模型未就绪，请重启后端或重新保存配置。"
+    return (
+        "未配置 AI 模型。请点击左上角「配置」→ 选择厂商 → 填写 API Key → 保存。"
+    )
+
+
 def get_agent_loop(llm_service) -> AgentLoop:
     global _agent_loop, _plan_manager, _memory_manager, _skill_graph, _tracer, _tool_registry
     if _agent_loop is None:
@@ -139,6 +179,8 @@ def get_agent_loop(llm_service) -> AgentLoop:
         _tool_registry.register(MemorySearchTool(_memory_manager))
         _tool_registry.register(MemoryStoreTool(_memory_manager))
         _tool_registry.register(ContextRetrieveTool())
+        _tool_registry.register(WebSearchTool())
+        _tool_registry.register(WebFetchTool())
         _tool_registry.register(SemanticPatchTool())
         _tool_registry.register(SkillSearchTool(_skill_graph))
         _tool_registry.register(SkillCreateTool(_skill_graph))
@@ -155,17 +197,21 @@ def get_agent_loop(llm_service) -> AgentLoop:
             memory_manager=_memory_manager,
             max_turns=10
         )
+    elif _llm_fingerprint(_agent_loop.llm) != _llm_fingerprint(llm_service):
+        _agent_loop.llm = llm_service
     return _agent_loop
 
 
 def _resolve_llm(request: ChatRequest) -> LLMService:
-    if request.llm_config:
+    _apply_persisted_model_config()
+    if request.llm_config and is_usable_api_key(request.llm_config.api_key):
+        fallback = global_model_config or {}
         return LLMService(
-            api_key=request.llm_config.api_key,
-            model=request.llm_config.model,
-            base_url=request.llm_config.base_url,
+            api_key=request.llm_config.api_key.strip(),
+            model=(request.llm_config.model or "").strip() or fallback.get("model", "gpt-4o-mini"),
+            base_url=(request.llm_config.base_url or "").strip() or fallback.get("base_url", ""),
         )
-    if global_model_config:
+    if global_model_config and is_usable_api_key(global_model_config.get("api_key")):
         return LLMService(
             api_key=global_model_config["api_key"],
             model=global_model_config["model"],
@@ -246,6 +292,27 @@ def _memory_updates_from_result(result) -> List[MemoryUpdate]:
     return updates
 
 
+def _memory_updates_from_writes(outcome: Optional[TurnWriteOutcome]) -> List[MemoryUpdate]:
+    if not outcome:
+        return []
+    updates = []
+    for item in outcome.stored:
+        updates.append(MemoryUpdate(
+            type=item.get("type", "user"),
+            content=item.get("content", ""),
+            layer="memory",
+            action="stored",
+        ))
+    for item in outcome.deleted:
+        updates.append(MemoryUpdate(
+            type="user",
+            content=item.get("content", ""),
+            layer="memory",
+            action="deleted",
+        ))
+    return updates
+
+
 def _chat_scope(request: ChatRequest):
     from src.mcp_server.workspace import effective_chat_scope
 
@@ -253,20 +320,26 @@ def _chat_scope(request: ChatRequest):
     return user_id, project_id, f"{user_id}:{request.session_id}"
 
 
+def _memory_user_id(user_id: str, session_id: str, cross_session_memory: bool) -> str:
+    if cross_session_memory:
+        return user_id
+    return f"{user_id}:{session_id}"
+
+
 async def _run_observer(
     request: ChatRequest,
     result,
     user_id: str = None,
     project_id: str = None,
-):
+) -> TurnWriteOutcome:
     global _memory_manager
     if not _memory_manager or not result.state:
-        return
+        return TurnWriteOutcome()
     uid = user_id or request.user_id
     pid = project_id if project_id is not None else request.project_id
     try:
         observer = MemoryObserver(_memory_manager)
-        await observer.observe_turn(
+        return await observer.observe_turn(
             user_message=request.message,
             assistant_message=result.content or "",
             user_id=uid,
@@ -275,6 +348,7 @@ async def _run_observer(
         )
     except Exception as e:
         logger.warning(f"Memory observer failed: {e}")
+        return TurnWriteOutcome()
 
 
 def _schedule_observer(
@@ -296,6 +370,12 @@ async def _await_observer_if_sync(
         _schedule_observer(request, result, user_id, project_id)
     else:
         await _run_observer(request, result, user_id, project_id)
+
+
+async def _await_observer_for_chat(
+    request: ChatRequest, result, user_id: str = None, project_id: str = None
+) -> TurnWriteOutcome:
+    return await _run_observer(request, result, user_id, project_id)
 
 
 def _agent_result_from_loop_out(loop_out: dict) -> AgentResult:
@@ -326,19 +406,24 @@ def _agent_result_from_loop_out(loop_out: dict) -> AgentResult:
 
 async def _execute_chat(request: ChatRequest):
     user_id, project_id, session_key = _chat_scope(request)
+    memory_user_id = _memory_user_id(user_id, request.session_id, request.cross_session_memory)
     if session_key not in sessions:
         sessions[session_key] = []
     llm = _resolve_llm(request)
+    not_ready = _llm_not_ready_message(request, llm)
+    if not_ready:
+        raise HTTPException(status_code=400, detail=not_ready)
     agent = get_agent_loop(llm)
     result = await agent.run(
         user_message=request.message,
         context_messages=sessions[session_key],
         session_id=request.session_id,
-        user_id=user_id,
+        user_id=memory_user_id,
         project_id=project_id,
+        attachments=[a.model_dump() for a in (request.attachments or [])],
     )
     _persist_session(session_key, request, result)
-    await _await_observer_if_sync(request, result, user_id, project_id)
+    await _await_observer_if_sync(request, result, memory_user_id, project_id)
     return result
 
 
@@ -373,6 +458,7 @@ async def chat(request: ChatRequest):
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     user_id, project_id, session_key = _chat_scope(request)
+    memory_user_id = _memory_user_id(user_id, request.session_id, request.cross_session_memory)
 
     async def event_generator() -> AsyncGenerator[str, None]:
         streamer = StreamingManager()
@@ -380,15 +466,29 @@ async def chat_stream(request: ChatRequest):
             sessions[session_key] = []
         loop_out: Dict[str, Any] = {}
         try:
+            yield StreamEvent(
+                type=StreamEventType.TOOL_RESULT,
+                content="正在检索记忆…",
+                metadata={"source": "status"},
+            ).to_sse()
+
             llm = _resolve_llm(request)
+            not_ready = _llm_not_ready_message(request, llm)
+            if not_ready:
+                yield streamer.create_error_event(not_ready).to_sse()
+                done = streamer.create_done_event()
+                done.metadata["response"] = not_ready
+                yield done.to_sse()
+                return
             agent = get_agent_loop(llm)
             async for loop_ev in agent.run_stream(
                 user_message=request.message,
                 context_messages=sessions[session_key],
                 session_id=request.session_id,
-                user_id=user_id,
+                user_id=memory_user_id,
                 project_id=project_id,
                 loop_out=loop_out,
+                attachments=[a.model_dump() for a in (request.attachments or [])],
             ):
                 if loop_ev.type == LoopEventType.TOKEN:
                     yield streamer.create_token_event(loop_ev.content).to_sse()
@@ -407,7 +507,6 @@ async def chat_stream(request: ChatRequest):
 
             result = _agent_result_from_loop_out(loop_out)
             _persist_session(session_key, request, result)
-            await _await_observer_if_sync(request, result, user_id, project_id)
 
             for cit in _citations_from_result(result):
                 meta_evt = StreamEvent(
@@ -423,6 +522,22 @@ async def chat_stream(request: ChatRequest):
             ]
             done.metadata["response"] = result.content
             yield done.to_sse()
+
+            from src.utils.config import settings
+
+            if settings.MEMORY_OBSERVER_ASYNC:
+                _schedule_observer(request, result, memory_user_id, project_id)
+            else:
+                write_outcome = await _await_observer_for_chat(
+                    request, result, memory_user_id, project_id
+                )
+                writes = _memory_updates_from_writes(write_outcome)
+                if writes:
+                    yield StreamEvent(
+                        type=StreamEventType.MEMORY_WRITES,
+                        content="",
+                        metadata={"memory_writes": [u.model_dump() for u in writes]},
+                    ).to_sse()
         except Exception as e:
             logger.error(f"Stream chat error: {e}", exc_info=True)
             yield streamer.create_error_event(str(e)).to_sse()
@@ -434,6 +549,32 @@ async def chat_stream(request: ChatRequest):
     )
 
 
+def _session_last_timestamp(session_key: str, messages: List[Dict]) -> str:
+    if isinstance(messages, list):
+        for msg in reversed(messages):
+            ts = msg.get("timestamp")
+            if ts:
+                return ts
+    filename = session_key.replace(":", "_") + ".json"
+    filepath = SESSIONS_DIR / filename
+    if filepath.exists():
+        return datetime.fromtimestamp(filepath.stat().st_mtime).isoformat()
+    return ""
+
+
+def _message_preview(msg: Optional[Dict]) -> str:
+    if not msg:
+        return ""
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        texts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+        content = " ".join(texts)
+    if not content and msg.get("attachments"):
+        names = [a.get("filename", "") for a in msg["attachments"]]
+        content = f"[附件: {', '.join(names)}]"
+    return str(content)[:50]
+
+
 @router.get("/sessions")
 async def list_sessions(user_id: str = "anonymous"):
     user_sessions = []
@@ -442,22 +583,22 @@ async def list_sessions(user_id: str = "anonymous"):
             session_id = key.split(":")[1]
             messages = sessions[key]
             last_message = messages[-1] if messages else None
-            
-            # 从第一条用户消息中提取会话名称
+            last_ts = _session_last_timestamp(key, messages)
+
             meta = session_metadata.get(key, {})
             name = meta.get("name") or session_id
             if not meta.get("name") and messages and isinstance(messages, list):
                 first_user_msg = next((m for m in messages if m.get("role") == "user"), None)
                 if first_user_msg:
-                    content = first_user_msg.get("content", "")
-                    name = content[:25] + ("..." if len(content) > 25 else "")
-            
+                    preview = _message_preview(first_user_msg)
+                    name = preview[:25] + ("..." if len(preview) > 25 else "")
+
             user_sessions.append({
                 "session_id": session_id,
                 "name": name,
                 "message_count": len(messages) if isinstance(messages, list) else 0,
-                "last_message": last_message.get("content", "")[:50] if last_message else "",
-                "last_timestamp": last_message.get("timestamp", "") if last_message else "",
+                "last_message": _message_preview(last_message),
+                "last_timestamp": last_ts,
                 "created_at": messages[0].get("timestamp", "") if messages and isinstance(messages, list) and len(messages) > 0 else ""
             })
     user_sessions.sort(key=lambda x: x.get("last_timestamp", ""), reverse=True)
@@ -502,13 +643,19 @@ async def delete_session(session_id: str, user_id: str = "anonymous"):
 async def save_config(config: ModelConfigRequest):
     try:
         global global_model_config, _agent_loop
-        global_model_config = {
-            "api_key": config.api_key,
-            "base_url": config.base_url,
-            "model": config.model
+        payload = {
+            "api_key": config.api_key.strip(),
+            "base_url": config.base_url.strip(),
+            "model": config.model.strip(),
         }
+        if not is_usable_api_key(payload["api_key"]):
+            raise HTTPException(status_code=400, detail="API Key 无效或为空，请填写真实密钥")
+        saved = config_manager.save_config(payload)
+        if not saved.get("success"):
+            raise HTTPException(status_code=400, detail=saved.get("error", "保存失败"))
+        global_model_config = payload
         _agent_loop = None
-        return {"status": "success", "message": "配置已保存"}
+        return {"status": "success", "message": "配置已保存", "configured": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -575,6 +722,16 @@ async def list_uploads(user_id: str):
     return {"files": files, "count": len(files)}
 
 
+@router.get("/uploads/{user_id}/{filename}/raw")
+async def get_upload_raw(user_id: str, filename: str):
+    file_path = Path("uploads") / user_id / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    import mimetypes
+    media_type, _ = mimetypes.guess_type(filename)
+    return FileResponse(file_path, media_type=media_type or "application/octet-stream")
+
+
 @router.get("/uploads/{user_id}/{filename}")
 async def get_upload_content(user_id: str, filename: str):
     """Get uploaded file content."""
@@ -595,6 +752,38 @@ async def get_upload_content(user_id: str, filename: str):
 
 # 初始化配置管理器
 config_manager = ConfigManager()
+
+
+def _apply_persisted_model_config() -> None:
+    global global_model_config, _agent_loop
+    if global_model_config:
+        return
+    config = config_manager.load_config()
+    if not config or not is_usable_api_key(config.get("api_key")):
+        return
+    global_model_config = {
+        "api_key": config["api_key"].strip(),
+        "base_url": config.get("base_url", ""),
+        "model": config.get("model", "gpt-4"),
+    }
+    _agent_loop = None
+
+
+_apply_persisted_model_config()
+
+
+@router.get("/config")
+async def get_config():
+    _apply_persisted_model_config()
+    cfg = global_model_config or config_manager.load_config()
+    if not cfg or not is_usable_api_key(cfg.get("api_key")):
+        return {"configured": False}
+    return {
+        "configured": True,
+        "base_url": cfg.get("base_url", ""),
+        "model": cfg.get("model", ""),
+        "has_api_key": True,
+    }
 
 
 @router.get("/config/presets")

@@ -53,6 +53,12 @@ export default function MemoryPanel() {
     loadStats();
     loadMetrics();
     loadMemories();
+    const onWrites = () => {
+      loadMemories();
+      loadStats();
+    };
+    window.addEventListener("memory-agent:writes", onWrites);
+    return () => window.removeEventListener("memory-agent:writes", onWrites);
   }, []);
 
   const loadStats = async () => {
@@ -154,15 +160,6 @@ export default function MemoryPanel() {
     }
   };
 
-  const copyStarterPrompt = async (prompt: string) => {
-    try {
-      await navigator.clipboard.writeText(prompt);
-      setNotice({ type: "success", text: "已复制，可粘贴到聊天框发送。" });
-    } catch {
-      setNotice({ type: "error", text: "复制失败，请手动选中文案。" });
-    }
-  };
-
   const typeLabels: Record<string, string> = {
     user: "用户画像",
     feedback: "行为反馈",
@@ -176,12 +173,6 @@ export default function MemoryPanel() {
     project: "bg-purple-500",
     reference: "bg-amber-500",
   };
-
-  const starterPrompts = [
-    "我偏好：代码直接、少解释、不要过度设计。",
-    "本项目约定：优先复用现有组件，不引入新框架。",
-    "不要保存临时调试信息，只记长期有效的偏好和项目决策。",
-  ];
 
   if (isLoading && !stats) {
     return (
@@ -279,26 +270,11 @@ export default function MemoryPanel() {
             刷新记忆列表
           </button>
           {memories.length === 0 ? (
-            <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100 space-y-2">
-              <p className="text-[11px] font-semibold text-indigo-800">
-                先让 MemoryAgent 认识你
+            <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+              <p className="text-[11px] font-semibold text-indigo-800">暂无记忆</p>
+              <p className="text-[10px] text-indigo-700 mt-1">
+                在聊天中说明需要长期记住的项目信息或规则，系统会自动沉淀，你可在此编辑或删除。
               </p>
-              <p className="text-[10px] text-indigo-700">
-                在聊天里输入下面任意一句，系统会自动沉淀为可编辑记忆。
-              </p>
-              <div className="space-y-1">
-                {starterPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    onClick={() => copyStarterPrompt(prompt)}
-                    className="w-full text-left text-[10px] text-slate-700 bg-white rounded border border-indigo-100 p-2 hover:border-indigo-300 hover:bg-indigo-50"
-                  >
-                    {prompt}
-                    <span className="block text-[9px] text-indigo-500 mt-1">点击复制</span>
-                  </button>
-                ))}
-              </div>
             </div>
           ) : (
             memories.map((memory) => {

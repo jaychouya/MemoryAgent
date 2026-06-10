@@ -33,6 +33,10 @@ def judge_memories(
     project_id: Optional[str] = None,
     limit: Optional[int] = None,
 ) -> List[Dict]:
+    from src.utils import as_int
+
+    if limit is not None:
+        limit = as_int(limit, 5)
     judged = []
     q = query or ""
     wants_reference = any(h in q.lower() for h in _REFERENCE_HINTS)
@@ -74,3 +78,34 @@ def judge_memories(
 
     judged.sort(key=lambda m: float(m.get("judge_score") or 0.0), reverse=True)
     return judged[:limit] if limit else judged
+
+
+def filter_relevant_memories(
+    query: str,
+    memories: List[Dict],
+    *,
+    min_judge_score: float = 0.35,
+    min_overlap: int = 1,
+    limit: int = 5,
+) -> List[Dict]:
+    from src.utils import as_int
+
+    limit = as_int(limit, 5)
+    if not memories:
+        return []
+    judged = judge_memories(query, memories, limit=limit * 2)
+    kept: List[Dict] = []
+    for mem in judged:
+        reason = mem.get("judge_reason") or ""
+        overlap = 0
+        if "overlap=" in reason:
+            try:
+                overlap = int(reason.split("overlap=")[1].split("/")[0])
+            except (IndexError, ValueError):
+                overlap = 0
+        score = float(mem.get("judge_score") or 0.0)
+        if overlap >= min_overlap or score >= min_judge_score:
+            kept.append(mem)
+        if len(kept) >= limit:
+            break
+    return kept

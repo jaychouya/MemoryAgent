@@ -68,6 +68,9 @@ class MemoryRetrieval:
         project_id: str = None,
         limit: int = 5
     ) -> List[Dict]:
+        from src.utils import as_int
+
+        limit = as_int(limit, 5)
         search_query = query or ""
         if (
             settings.MEMORY_QUERY_REWRITE_ENABLED

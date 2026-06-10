@@ -1,7 +1,24 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getUserId } from "@/lib/api";
+import {
+  apiUrl,
+  fetchBackendConfigured,
+  getUserId,
+  resolveModelConfig,
+  streamChatUrl,
+  streamChatHeaders,
+  uploadFile,
+  uploadRawUrl,
+} from "@/lib/api";
+import MarkdownMessage from "@/components/MarkdownMessage";
+
+interface MemoryWrite {
+  type: string;
+  content: string;
+  layer: string;
+  action: "stored" | "deleted" | "used";
+}
 
 interface MemoryCitation {
   memory_id: string;
@@ -16,16 +33,31 @@ interface MemoryCitation {
   judge_reason?: string;
 }
 
+interface MessageAttachment {
+  filename: string;
+  kind: "file" | "image";
+  path?: string;
+}
+
+interface PendingAttachment {
+  id: string;
+  file: File;
+  kind: "file" | "image";
+  previewUrl?: string;
+}
+
 interface Message {
   id: string;
   content: string;
   role: "user" | "assistant";
   timestamp: Date;
+  attachments?: MessageAttachment[];
   metadata?: {
     turns?: number;
     tools_called?: string[];
     memories_used?: string[];
     memory_citations?: MemoryCitation[];
+    memory_writes?: MemoryWrite[];
     stop_reason?: string;
   };
 }
@@ -48,43 +80,84 @@ interface ModelConfig {
 
 interface ChatPanelProps {
   modelConfig?: ModelConfig | null;
+  crossSessionMemory?: boolean;
 }
 
-export default function ChatPanel({ modelConfig }: ChatPanelProps) {
+const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+function formatMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((p) => p && typeof p === "object" && (p as { type?: string }).type === "text")
+      .map((p) => (p as { text?: string }).text || "")
+      .join("\n");
+  }
+  return content ? String(content) : "";
+}
+
+function isImageFile(file: File): boolean {
+  return IMAGE_TYPES.has(file.type) || /\.(jpe?g|png|gif|webp)$/i.test(file.name);
+}
+
+export default function ChatPanel({
+  modelConfig,
+  crossSessionMemory = false,
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState("default");
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [showSessions, setShowSessions] = useState(false);
+  const [showSessions, setShowSessions] = useState(true);
   const [showMetadata, setShowMetadata] = useState(true);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [backendConfigured, setBackendConfigured] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const sessionBootstrapped = useRef(false);
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  const quickStartPrompts = [
-    "记住：我偏好代码直接、少解释、不要过度设计。",
-    "本项目约定：优先复用现有组件，不引入新框架。",
-    "忘掉我之前关于 Java 的偏好。",
-  ];
-
-  const loadSessions = async () => {
+  const loadSessions = async (): Promise<Session[]> => {
     try {
-      const response = await fetch(`/api/sessions?user_id=${encodeURIComponent(getUserId())}`);
+      const response = await fetch(apiUrl(`/api/sessions?user_id=${encodeURIComponent(getUserId())}`));
       const data = await response.json();
-      setSessions(data.sessions || []);
+      const list: Session[] = (data.sessions || []).sort(
+        (a: Session, b: Session) =>
+          (b.last_timestamp || "").localeCompare(a.last_timestamp || "")
+      );
+      setSessions(list);
+      return list;
     } catch (error) {
       console.error("Failed to load sessions:", error);
+      return [];
     }
   };
+
+  const refreshBackendConfig = async () => {
+    setBackendConfigured(await fetchBackendConfigured());
+  };
+
+  useEffect(() => {
+    (async () => {
+      await refreshBackendConfig();
+      const list = await loadSessions();
+      if (!sessionBootstrapped.current && list.length > 0) {
+        sessionBootstrapped.current = true;
+        await switchSession(list[0].session_id);
+      }
+    })();
+    const onConfigSaved = () => { refreshBackendConfig(); };
+    window.addEventListener("memory-agent:config-saved", onConfigSaved);
+    return () => window.removeEventListener("memory-agent:config-saved", onConfigSaved);
+  }, []);
 
   const deleteSession = async (sessionId: string) => {
     if (!confirm("确定要删除这个会话吗？")) return;
     
     try {
-      await fetch(`/api/sessions/${sessionId}?user_id=${encodeURIComponent(getUserId())}`, {
+      await fetch(apiUrl(`/api/sessions/${sessionId}?user_id=${encodeURIComponent(getUserId())}`), {
         method: "DELETE",
       });
       
@@ -125,17 +198,28 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     
     try {
       const response = await fetch(
-        `/api/sessions/${sessionId}/messages?user_id=${encodeURIComponent(getUserId())}`
+        apiUrl(`/api/sessions/${sessionId}/messages?user_id=${encodeURIComponent(getUserId())}`)
       );
       const data = await response.json();
       
       if (data.messages && data.messages.length > 0) {
-        const loadedMessages: Message[] = data.messages.map((m: any, index: number) => ({
-          id: `loaded-${index}`,
-          content: m.content,
-          role: m.role as "user" | "assistant",
-          timestamp: new Date(m.timestamp || Date.now()),
-        }));
+        const loadedMessages: Message[] = data.messages
+          .filter((m: { role?: string }) => m.role === "user" || m.role === "assistant")
+          .map((m: {
+            content: string | unknown;
+            role: string;
+            timestamp?: string;
+            attachments?: MessageAttachment[];
+          }, index: number) => ({
+            id: `loaded-${index}`,
+            content: formatMessageContent(m.content),
+            role: m.role as "user" | "assistant",
+            timestamp: new Date(m.timestamp || Date.now()),
+            attachments: (m.attachments || []).map((a) => ({
+              ...a,
+              path: a.path,
+            })),
+          }));
         setMessages(loadedMessages);
       } else {
         setMessages([]);
@@ -146,15 +230,109 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     }
   };
 
+  const addFiles = (files: FileList | null, forceKind?: "file" | "image") => {
+    if (!files?.length) return;
+    const next: PendingAttachment[] = [];
+    Array.from(files).forEach((file) => {
+      const kind = forceKind || (isImageFile(file) ? "image" : "file");
+      next.push({
+        id: `${Date.now()}-${file.name}`,
+        file,
+        kind,
+        previewUrl: kind === "image" ? URL.createObjectURL(file) : undefined,
+      });
+    });
+    setPendingAttachments((prev) => [...prev, ...next]);
+  };
+
+  const removePendingAttachment = (id: string) => {
+    setPendingAttachments((prev) => {
+      const target = prev.find((a) => a.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((a) => a.id !== id);
+    });
+  };
+
+  const attachmentUrl = (att: MessageAttachment) =>
+    uploadRawUrl(getUserId(), att.filename);
+
+  const renderMessageAttachments = (attachments?: MessageAttachment[]) => {
+    if (!attachments?.length) return null;
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {attachments.map((att) =>
+          att.kind === "image" ? (
+            <a
+              key={att.filename}
+              href={attachmentUrl(att)}
+              target="_blank"
+              rel="noreferrer"
+              className="block"
+            >
+              <img
+                src={attachmentUrl(att)}
+                alt={att.filename}
+                className="max-h-40 rounded-md border border-white/20"
+              />
+            </a>
+          ) : (
+            <span
+              key={att.filename}
+              className="text-[10px] px-2 py-1 rounded bg-black/10"
+            >
+              📎 {att.filename}
+            </span>
+          )
+        )}
+      </div>
+    );
+  };
+
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() && pendingAttachments.length === 0) return;
 
     const messageText = input.trim();
+    const userId = getUserId();
+    let uploadedAttachments: MessageAttachment[] = [];
+    try {
+      if (pendingAttachments.length > 0) {
+        const results = await Promise.all(
+          pendingAttachments.map(async (att) => {
+            const saved = await uploadFile(att.file, userId);
+            return {
+              filename: saved.filename,
+              path: saved.path,
+              kind: att.kind,
+            } as MessageAttachment;
+          })
+        );
+        uploadedAttachments = results;
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "上传失败";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          content: msg,
+          role: "assistant",
+          timestamp: new Date(),
+        },
+      ]);
+      return;
+    }
+
+    pendingAttachments.forEach((a) => {
+      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+    });
+    setPendingAttachments([]);
+
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: messageText,
+      content: messageText || (uploadedAttachments.length ? `[已上传 ${uploadedAttachments.length} 个附件]` : ""),
       role: "user",
       timestamp: new Date(),
+      attachments: uploadedAttachments,
     };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
@@ -163,102 +341,231 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    const activeConfig = resolveModelConfig(modelConfig);
+    if (!activeConfig?.apiKey?.trim() && !backendConfigured) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          content: "未配置 AI 模型。请点击左上角「配置」→ 选择厂商（如百炼/硅基流动）→ 填写 API Key → 点击保存。",
+          role: "assistant",
+          timestamp: new Date(),
+        },
+      ]);
+      setIsLoading(false);
+      return;
+    }
+    const streamTimeout = window.setTimeout(() => abortController.abort(), 120_000);
     const requestBody = {
       message: messageText,
       session_id: currentSessionId,
-      user_id: getUserId(),
-      llm_config: modelConfig ? {
-        api_key: modelConfig.apiKey,
-        base_url: modelConfig.baseUrl,
-        model: modelConfig.model
+      user_id: userId,
+      cross_session_memory: crossSessionMemory,
+      attachments: uploadedAttachments.map((a) => ({
+        filename: a.filename,
+        path: a.path,
+        kind: a.kind,
+      })),
+      llm_config: activeConfig?.apiKey?.trim() ? {
+        api_key: activeConfig.apiKey,
+        base_url: activeConfig.baseUrl,
+        model: activeConfig.model || "gpt-4o-mini",
       } : null,
     };
 
     const assistantId = (Date.now() + 1).toString();
+    setStreamingMessageId(assistantId);
     let streamedContent = "";
+    let displayContent = "";
+    const thinkingHint = "正在搜索记忆并生成回复…";
+    displayContent = thinkingHint;
     let toolsCalled: string[] = [];
     let memoriesUsed: string[] = [];
     let memoryCitations: MemoryCitation[] = [];
+    let memoryWrites: MemoryWrite[] = [];
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: assistantId,
+        content: thinkingHint,
+        role: "assistant",
+        timestamp: new Date(),
+      },
+    ]);
+
+    const applyStreamPayload = (payload: {
+      type: string;
+      content?: string;
+      metadata?: Record<string, unknown>;
+    }) => {
+      if (payload.type === "token" && payload.content) {
+        streamedContent += payload.content;
+        displayContent = streamedContent;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: displayContent } : m
+          )
+        );
+      } else if (payload.type === "error") {
+        displayContent = payload.content || displayContent || "请求失败，请稍后重试。";
+        streamedContent = displayContent;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: displayContent } : m
+          )
+        );
+        setIsLoading(false);
+      } else if (payload.type === "done") {
+        const response = payload.metadata?.response;
+        if (typeof response === "string" && response.trim()) {
+          if (!streamedContent || streamedContent === thinkingHint) {
+            streamedContent = response;
+          }
+          displayContent = streamedContent;
+        }
+        if (displayContent && displayContent !== thinkingHint) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, content: displayContent } : m
+            )
+          );
+        }
+        setIsLoading(false);
+      } else if (
+        payload.type === "tool_call"
+        && payload.content
+        && !streamedContent.trim()
+      ) {
+        displayContent = `正在调用 ${payload.content}…`;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: displayContent } : m
+          )
+        );
+      } else if (
+        payload.type === "tool_result"
+        && payload.metadata?.source === "status"
+        && payload.content
+        && !streamedContent.trim()
+      ) {
+        displayContent = payload.content as string;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: displayContent } : m
+          )
+        );
+      } else if (payload.type === "tool_result" && payload.metadata?.citation) {
+        memoryCitations.push(payload.metadata.citation as MemoryCitation);
+        memoriesUsed.push(
+          (payload.metadata.citation as MemoryCitation).content_snippet
+        );
+      } else if (payload.type === "tool_result" && payload.metadata?.source === "memory") {
+        memoriesUsed.push(payload.content || "");
+      } else if (payload.type === "tool_result" && payload.metadata?.tool_name) {
+        toolsCalled.push(payload.metadata.tool_name as string);
+      } else if (
+        (payload.type === "done" || payload.type === "memory_writes")
+        && payload.metadata?.memory_writes
+      ) {
+        memoryWrites = payload.metadata.memory_writes as MemoryWrite[];
+      }
+    };
+
+    const parseSseBuffer = (raw: string) => {
+      const parts = raw.split("\n\n");
+      const rest = parts.pop() || "";
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        try {
+          applyStreamPayload(JSON.parse(line.replace(/^data:\s*/, "")));
+        } catch {
+          /* ignore malformed SSE chunks */
+        }
+      }
+      return rest;
+    };
 
     try {
-      const streamResponse = await fetch("/api/chat/stream", {
+      const streamResponse = await fetch(streamChatUrl(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: streamChatHeaders(),
         body: JSON.stringify(requestBody),
         signal: abortController.signal,
       });
 
       if (streamResponse.ok && streamResponse.body) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: assistantId,
-            content: "",
-            role: "assistant",
-            timestamp: new Date(),
-          },
-        ]);
-
         const reader = streamResponse.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
 
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-
-          for (const part of parts) {
-            const line = part.trim();
-            if (!line.startsWith("data:")) continue;
-            try {
-              const payload = JSON.parse(line.replace(/^data:\s*/, ""));
-              if (payload.type === "token") {
-                streamedContent += payload.content;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId
-                      ? { ...m, content: streamedContent }
-                      : m
-                  )
-                );
-              } else if (payload.type === "tool_result" && payload.metadata?.citation) {
-                memoryCitations.push(payload.metadata.citation as MemoryCitation);
-                memoriesUsed.push(payload.metadata.citation.content_snippet);
-              } else if (payload.type === "tool_result" && payload.metadata?.source === "memory") {
-                memoriesUsed.push(payload.content);
-              } else if (payload.type === "tool_result" && payload.metadata?.tool_name) {
-                toolsCalled.push(payload.metadata.tool_name);
-              }
-            } catch {
-              /* ignore malformed SSE chunks */
-            }
+          if (value) {
+            buffer += decoder.decode(value, { stream: true });
+            buffer = parseSseBuffer(buffer);
           }
+          if (done) break;
+        }
+        if (buffer.trim()) {
+          parseSseBuffer(`${buffer}\n\n`);
         }
 
+        const hasReply = Boolean(
+          (streamedContent && streamedContent !== thinkingHint)
+          || (displayContent && displayContent !== thinkingHint)
+        );
+        const fallbackContent = toolsCalled.length > 0
+          ? "工具已执行，但模型未返回最终文字，请重试。"
+          : "未收到回复，请检查左上角模型配置或稍后重试。";
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
               ? {
                   ...m,
-                  content: streamedContent || "（无内容）",
+                  content: hasReply
+                    ? (streamedContent && streamedContent !== thinkingHint
+                        ? streamedContent
+                        : displayContent)
+                    : fallbackContent,
                   metadata: {
                     tools_called: toolsCalled,
                     memories_used: memoriesUsed,
                     memory_citations: memoryCitations,
+                    memory_writes: memoryWrites,
                     stop_reason: "end_turn",
                   },
                 }
               : m
           )
         );
+        if (memoryWrites.length > 0) {
+          window.dispatchEvent(new CustomEvent("memory-agent:writes"));
+        }
         loadSessions();
         return;
       }
 
-      const response = await fetch("/api/chat", {
+      if (!streamResponse.ok) {
+        let errMsg = `请求失败 (${streamResponse.status})`;
+        try {
+          const errBody = await streamResponse.json();
+          if (typeof errBody.detail === "string") {
+            errMsg = errBody.detail;
+          }
+        } catch {
+          /* ignore */
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: errMsg } : m
+          )
+        );
+        return;
+      }
+
+      const response = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -278,26 +585,43 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
           memories_used: data.memory_citations?.map((c: MemoryCitation) => c.content_snippet)
             || data.memory_updates?.map((m: any) => m.content) || [],
           memory_citations: data.memory_citations || [],
+          memory_writes: (data.memory_updates || []).filter(
+            (m: MemoryWrite) => m.action === "stored" || m.action === "deleted"
+          ),
           stop_reason: data.decision_explanation?.action || "end_turn",
         }
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      if (assistantMessage.metadata?.memory_writes?.length) {
+        window.dispatchEvent(new CustomEvent("memory-agent:writes"));
+      }
     } catch (error: any) {
       if (error.name === "AbortError") {
-        // 用户终止了请求
-        const abortMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: "（已终止回复）",
-          role: "assistant",
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, abortMessage]);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: streamedContent || "（已终止回复）" }
+              : m
+          )
+        );
       } else {
         console.error("Failed to send message:", error);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: "连接失败，请确认后端已启动（端口 8000）并重试。",
+                }
+              : m
+          )
+        );
       }
     } finally {
+      window.clearTimeout(streamTimeout);
       setIsLoading(false);
+      setStreamingMessageId(null);
       abortControllerRef.current = null;
     }
   };
@@ -342,7 +666,31 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
               未命中记忆
             </span>
           )}
+          {metadata.memory_writes?.filter((w) => w.action === "stored").length ? (
+            <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 rounded text-emerald-700">
+              沉淀 {metadata.memory_writes.filter((w) => w.action === "stored").length} 条
+            </span>
+          ) : null}
+          {metadata.memory_writes?.filter((w) => w.action === "deleted").length ? (
+            <span className="text-[10px] px-1.5 py-0.5 bg-rose-100 rounded text-rose-700">
+              删除 {metadata.memory_writes.filter((w) => w.action === "deleted").length} 条
+            </span>
+          ) : null}
         </div>
+        {metadata.memory_writes && metadata.memory_writes.length > 0 && (
+          <details className="mt-2 text-[10px] text-slate-600">
+            <summary className="cursor-pointer text-emerald-700 font-medium">
+              查看记忆变更
+            </summary>
+            <ul className="mt-1 space-y-1 pl-1">
+              {metadata.memory_writes.map((w, i) => (
+                <li key={`${w.action}-${i}`} className="line-clamp-2">
+                  {w.action === "deleted" ? "删除" : "沉淀"}: {w.content}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {metadata.memory_citations && metadata.memory_citations.length > 0 && (
           <details className="mt-2 text-[10px] text-slate-600">
             <summary className="cursor-pointer text-purple-700 font-medium">
@@ -493,20 +841,8 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                 </svg>
               </div>
-              <p className="text-xs font-medium text-slate-500">先给 MemoryAgent 一条可复用信息</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">点击样例填入输入框，发送后可在左侧看到记忆沉淀。</p>
-              <div className="mt-3 w-full max-w-md space-y-1.5">
-                {quickStartPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    onClick={() => setInput(prompt)}
-                    className="w-full text-left text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 hover:border-indigo-200 hover:bg-indigo-50"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
+              <p className="text-xs font-medium text-slate-500">开始对话</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">输入需要长期记住的项目信息或规则，发送后可在左侧查看沉淀结果。</p>
             </div>
           )}
           
@@ -522,7 +858,17 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
                     : "bg-slate-100 text-slate-800 rounded-bl-sm"
                 }`}
               >
-                <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                {message.role === "assistant" ? (
+                  <MarkdownMessage content={message.content} />
+                ) : (
+                  <p className="text-[13px] leading-relaxed whitespace-pre-wrap">
+                    {message.content}
+                  </p>
+                )}
+                {streamingMessageId === message.id && isLoading && (
+                  <span className="inline-block w-0.5 h-3.5 ml-0.5 bg-indigo-500 animate-pulse align-middle" />
+                )}
+                {renderMessageAttachments(message.attachments)}
                 <p className={`text-[10px] mt-1 ${message.role === "user" ? "text-indigo-200" : "text-slate-400"}`}>
                   {message.timestamp.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
                 </p>
@@ -531,7 +877,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
             </div>
           ))}
           
-          {isLoading && (
+          {isLoading && streamingMessageId === null && (
             <div className="flex justify-start">
               <div className="bg-slate-100 px-3 py-2 rounded-xl rounded-bl-sm">
                 <div className="flex items-center gap-1.5">
@@ -549,7 +895,76 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
 
         {/* Input */}
         <div className="p-3 border-t border-slate-200 flex-shrink-0">
+          {pendingAttachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {pendingAttachments.map((att) => (
+                <div
+                  key={att.id}
+                  className="relative flex items-center gap-2 px-2 py-1 bg-slate-100 rounded-lg text-[11px] text-slate-600"
+                >
+                  {att.kind === "image" && att.previewUrl ? (
+                    <img src={att.previewUrl} alt={att.file.name} className="h-10 w-10 object-cover rounded" />
+                  ) : (
+                    <span>📎 {att.file.name}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removePendingAttachment(att.id)}
+                    className="text-slate-400 hover:text-red-500"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept=".txt,.md,.py,.js,.json,.csv,.html,.css"
+            onChange={(e) => {
+              addFiles(e.target.files, "file");
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={imageInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            onChange={(e) => {
+              addFiles(e.target.files, "image");
+              e.target.value = "";
+            }}
+          />
           <div className="flex gap-2 items-end">
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={isLoading}
+                className="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500"
+                title="上传图片"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                className="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500"
+                title="上传文件"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+            </div>
             <textarea
               value={input}
               onChange={(e) => {
@@ -587,7 +1002,7 @@ export default function ChatPanel({ modelConfig }: ChatPanelProps) {
             ) : (
               <button
                 onClick={sendMessage}
-                disabled={!input.trim()}
+                disabled={!input.trim() && pendingAttachments.length === 0}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-[13px] font-medium flex items-center gap-1.5 flex-shrink-0"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

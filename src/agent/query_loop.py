@@ -8,7 +8,7 @@ import inspect
 import logging
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Set, Tuple
 
 from src.agent.loop_state import (
     LoopState,
@@ -54,6 +54,11 @@ OUTPUT_NUDGE = (
     "Output token limit hit. Resume directly from the cutoff — no apology, "
     "no recap. Split remaining work into smaller steps."
 )
+EMPTY_AFTER_TOOLS_NUDGE = (
+    "请根据上面的工具结果，用中文直接回答用户当前问题。"
+    "不要调用任何工具，不要输出 <tool_call>。"
+)
+MAX_EMPTY_AFTER_TOOLS_RETRIES = 1
 
 
 class LoopEventType(str, Enum):
@@ -113,12 +118,25 @@ async def execute_query_loop(
             emit(LoopEvent(LoopEventType.TOKEN, content=delta))
 
         try:
+            exclude_tools: Set[str] = set()
+            if tool_registry:
+                all_tools = {t.name for t in tool_registry.get_all()}
+                web_tools = {"web_search", "web_fetch"}
+                if not state.tools_called:
+                    allowed_tools = web_tools
+                elif "web_search" in state.tools_called and "web_fetch" not in state.tools_called:
+                    allowed_tools = {"web_fetch"}
+                else:
+                    allowed_tools = set()
+                exclude_tools = all_tools - allowed_tools
+            token_callback = on_token if not state.tools_called else None
             response = await _call_model(
                 llm_service,
                 messages_for_query,
                 state.system_prompt,
                 tool_registry,
-                on_token=on_token,
+                on_token=token_callback,
+                exclude_tools=exclude_tools,
             )
         except Exception as e:
             if (
@@ -162,12 +180,36 @@ async def execute_query_loop(
 
         tool_calls = response.get("tool_calls") or []
         text = response.get("content") or ""
+        emitted_text_token = False
         if text and not streamed_tokens and not response.get("streamed"):
             emit(LoopEvent(LoopEventType.TOKEN, content=text))
+            emitted_text_token = True
 
         if not tool_calls:
+            if (
+                not text.strip()
+                and state.tools_called
+                and state.empty_after_tools_retries < MAX_EMPTY_AFTER_TOOLS_RETRIES
+            ):
+                state = replace(
+                    state,
+                    messages=state.messages + [{
+                        "role": "user",
+                        "content": EMPTY_AFTER_TOOLS_NUDGE,
+                    }],
+                    empty_after_tools_retries=state.empty_after_tools_retries + 1,
+                    turn_count=state.turn_count - 1,
+                )
+                continue
+
+            if not text.strip() and state.tools_called:
+                text = _summarize_tool_results(state.messages)
+
             exit_reason = LoopExitReason.COMPLETED
-            final_content = text
+            from src.agent.output_format import normalize_agent_output
+            final_content = normalize_agent_output(text)
+            if final_content.strip() and not emitted_text_token:
+                emit(LoopEvent(LoopEventType.TOKEN, content=final_content))
             state = replace(
                 state,
                 messages=state.messages + [{"role": "assistant", "content": final_content}],
@@ -281,15 +323,40 @@ async def query_loop(
         await task
 
 
+_MEMORY_READ_TOOLS = frozenset({"memory_search", "context_retrieve"})
+
+
+def _summarize_tool_results(messages: List[Dict]) -> str:
+    from src.agent.tool_result_format import summarize_tool_messages
+
+    chunks: List[str] = []
+    for msg in reversed(messages):
+        if msg.get("role") != "tool":
+            continue
+        content = str(msg.get("content", "")).strip()
+        if not content or content.startswith("[工具未执行"):
+            continue
+        chunks.append(content)
+        if len(chunks) >= 3:
+            break
+    chunks.reverse()
+    return summarize_tool_messages(chunks)
+
+
 async def _call_model(
     llm_service,
     messages,
     system_prompt,
     tool_registry,
     on_token=None,
+    exclude_tools: Optional[set] = None,
 ):
     full_messages = [{"role": "system", "content": system_prompt}] + messages
-    tools = tool_registry.get_function_schemas() if tool_registry else None
+    tools = None
+    if tool_registry:
+        tools = tool_registry.get_function_schemas(exclude=exclude_tools or set())
+        if not tools:
+            tools = None
     stream_fn = getattr(llm_service, "generate_response_stream", None)
     if (
         on_token

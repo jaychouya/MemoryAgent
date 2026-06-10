@@ -1,11 +1,9 @@
 """Auto write-back observer after conversations."""
 
 import logging
-from typing import List
-
 from src.memory.manager import MemoryManager
 from src.memory.auto_write import extract_candidates
-from src.memory.write_pipeline import persist_turn_memories
+from src.memory.write_pipeline import TurnWriteOutcome, persist_turn_memories
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
@@ -22,9 +20,9 @@ class MemoryObserver:
         user_id: str,
         session_id: str = None,
         project_id: str = None,
-    ) -> List[str]:
+    ) -> TurnWriteOutcome:
         if not settings.MEMORY_EXTRACT_ENABLED:
-            return []
+            return TurnWriteOutcome()
         return await persist_turn_memories(
             self.memory,
             user_message,

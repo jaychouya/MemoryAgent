@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import ChatPanel from "@/components/ChatPanel";
 import SettingsPanel, { ModelConfig } from "@/components/SettingsPanel";
 import MemoryPanel from "@/components/MemoryPanel";
+import { apiUrl, fetchBackendConfigured, saveModelConfig } from "@/lib/api";
 
 export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
@@ -12,28 +13,59 @@ export default function Home() {
 
   useEffect(() => {
     const saved = localStorage.getItem("modelConfig");
+    let savedCfg: ModelConfig | null = null;
     if (saved) {
-      setModelConfig(JSON.parse(saved));
+      savedCfg = JSON.parse(saved);
+      setModelConfig(savedCfg);
     }
     const crossSession = localStorage.getItem("crossSessionEnabled");
     if (crossSession) {
       setCrossSessionEnabled(JSON.parse(crossSession));
     }
+    fetch(apiUrl("/api/config"))
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.configured) {
+          setModelConfig((prev) => {
+            if (prev?.apiKey) return prev;
+            if (savedCfg?.apiKey) return savedCfg;
+            if (data.base_url && data.model) {
+              return {
+                providerId: savedCfg?.providerId || "custom",
+                apiKey: "",
+                baseUrl: data.base_url,
+                model: data.model,
+              };
+            }
+            return prev;
+          });
+          return;
+        }
+        if (!savedCfg?.apiKey) {
+          setShowSettings(true);
+        }
+      })
+      .catch(() => {
+        if (!savedCfg?.apiKey) {
+          setShowSettings(true);
+        }
+      });
   }, []);
 
   const handleSaveConfig = async (config: ModelConfig) => {
+    if (!config.apiKey?.trim()) {
+      alert("请填写 API Key");
+      return;
+    }
+    try {
+      await saveModelConfig(config);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "配置保存失败");
+      return;
+    }
     setModelConfig(config);
     localStorage.setItem("modelConfig", JSON.stringify(config));
-    
-    await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: config.apiKey,
-        base_url: config.baseUrl,
-        model: config.model
-      }),
-    });
+    window.dispatchEvent(new CustomEvent("memory-agent:config-saved"));
   };
 
   return (
@@ -48,7 +80,7 @@ export default function Home() {
               </svg>
             </div>
             <div>
-              <h1 className="text-sm font-bold text-slate-900">MemoryAI</h1>
+              <h1 className="text-sm font-bold text-slate-900">MemoryAgent</h1>
               <p className="text-[10px] text-slate-400">认知记忆架构</p>
             </div>
           </div>
@@ -183,7 +215,10 @@ export default function Home() {
 
         {/* 右侧聊天区 */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <ChatPanel modelConfig={modelConfig} />
+          <ChatPanel
+            modelConfig={modelConfig}
+            crossSessionMemory={crossSessionEnabled}
+          />
         </div>
       </div>
 

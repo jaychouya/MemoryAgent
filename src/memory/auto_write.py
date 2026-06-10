@@ -20,13 +20,14 @@ TYPE_MAP = {
     "reference": MemoryType.REFERENCE,
 }
 
+_REMEMBER_EXPLICIT = re.compile(r"记住[：:]?\s*(.+?)(?:[，。!！?？\n]|$)")
+
 PREFERENCE_PATTERNS = [
-    (re.compile(r"我喜欢(.+?)(?:[，。!！?？\n]|$)"), MemoryType.USER),
-    (re.compile(r"我偏好(.+?)(?:[，。!！?？\n]|$)"), MemoryType.USER),
-    (re.compile(r"我讨厌(.+?)(?:[，。!！?？\n]|$)"), MemoryType.USER),
-    (re.compile(r"记住[：:]?\s*(.+?)(?:[，。!！?？\n]|$)"), MemoryType.USER),
-    (re.compile(r"不要用\s*(.+?)(?:[，。!！?？\n]|$)"), MemoryType.FEEDBACK),
-    (re.compile(r"不要\s*使用\s*(.+?)(?:[，。!！?？\n]|$)"), MemoryType.FEEDBACK),
+    (re.compile(r"我喜欢(.+?)(?:[，。!！?？\n]|$)"), MemoryType.USER, "我喜欢"),
+    (re.compile(r"我偏好(.+?)(?:[，。!！?？\n]|$)"), MemoryType.USER, "我偏好"),
+    (re.compile(r"我讨厌(.+?)(?:[，。!！?？\n]|$)"), MemoryType.USER, "我讨厌"),
+    (re.compile(r"不要用\s*(.+?)(?:[，。!！?？\n]|$)"), MemoryType.FEEDBACK, "不要用"),
+    (re.compile(r"不要\s*使用\s*(.+?)(?:[，。!！?？\n]|$)"), MemoryType.FEEDBACK, "不要使用"),
 ]
 
 PROJECT_PATTERNS = [
@@ -66,8 +67,40 @@ def _save_dedup() -> None:
     )
 
 
+def normalize_memory_content(content: str) -> str:
+    text = content.strip()
+    text = re.sub(r"^记住[：:]?\s*", "", text)
+    text = re.sub(r"^用户偏好", "我偏好", text)
+    return text.strip()
+
+
+def memory_fingerprint(content: str) -> str:
+    text = normalize_memory_content(content).lower()
+    text = re.sub(r"^我", "", text)
+    text = re.sub(r"\s+", "", text)
+    text = re.sub(r"[，。!！?？、；;：:]", "", text)
+    return text
+
+
+def texts_similar(a: str, b: str, threshold: float = 0.55) -> bool:
+    if not a or not b:
+        return False
+    if memory_fingerprint(a) == memory_fingerprint(b):
+        return True
+
+    def tokenize(text: str) -> set:
+        chinese = re.findall(r"[\u4e00-\u9fff]", text)
+        english = re.findall(r"[a-zA-Z]+", text.lower())
+        return set(chinese + english)
+
+    words1, words2 = tokenize(a), tokenize(b)
+    if not words1 or not words2:
+        return False
+    return len(words1 & words2) / len(words1 | words2) >= threshold
+
+
 def content_hash(user_id: str, content: str) -> str:
-    return hashlib.md5(f"{user_id}:{content}".encode()).hexdigest()
+    return hashlib.md5(f"{user_id}:{memory_fingerprint(content)}".encode()).hexdigest()
 
 
 def is_duplicate(user_id: str, content: str, hours: int = 24) -> bool:
@@ -119,19 +152,53 @@ def extract_forget_query(user_message: str) -> str:
     return query
 
 
+def has_explicit_memory_intent(user_message: str) -> bool:
+    text = user_message.strip()
+    if not text or extract_forget_query(text) or is_transient_utterance(text):
+        return False
+    if _is_memory_meta_question(text):
+        return False
+    if _REMEMBER_EXPLICIT.search(text):
+        return True
+    for pattern, _, _ in PREFERENCE_PATTERNS:
+        if pattern.search(text):
+            return True
+    for pattern, _ in PROJECT_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
+
+
 def extract_candidates(user_message: str) -> List[Tuple[str, MemoryType]]:
-    candidates = []
+    candidates: List[Tuple[str, MemoryType]] = []
+    seen: set = set()
     text = user_message.strip()
     if not text:
         return candidates
     if extract_forget_query(text) or is_transient_utterance(text) or _is_memory_meta_question(text):
         return candidates
-    for pattern, mem_type in PREFERENCE_PATTERNS + PROJECT_PATTERNS:
+
+    def add(raw: str, mem_type: MemoryType) -> None:
+        fragment = normalize_memory_content(_clean_fragment(raw))
+        fp = memory_fingerprint(fragment)
+        if len(fragment) < 6 or fp in seen or should_exclude(fragment, mem_type.value):
+            return
+        seen.add(fp)
+        candidates.append((fragment, mem_type))
+
+    remember = _REMEMBER_EXPLICIT.search(text)
+    if remember:
+        add(remember.group(1), MemoryType.USER)
+        return candidates
+
+    for pattern, mem_type, prefix in PREFERENCE_PATTERNS:
         for match in pattern.finditer(text):
-            fragment = _clean_fragment(match.group(0))
-            if len(fragment) >= 6 and not should_exclude(fragment, mem_type.value):
-                candidates.append((fragment, mem_type))
-    if not candidates and any(k in text for k in ("喜欢", "讨厌", "偏好", "记住")):
-        if len(text) >= 6 and not should_exclude(text, "user"):
-            candidates.append((text, MemoryType.USER))
+            add(f"{prefix}{match.group(1)}", mem_type)
+
+    for pattern, mem_type in PROJECT_PATTERNS:
+        for match in pattern.finditer(text):
+            add(match.group(0), mem_type)
+
+    if not candidates and any(k in text for k in ("喜欢", "讨厌", "偏好")):
+        add(text, MemoryType.USER)
     return candidates

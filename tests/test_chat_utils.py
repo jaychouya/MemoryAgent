@@ -91,19 +91,37 @@ def test_file_uploader_read():
     shutil.rmtree(test_dir)
 
 
+def test_build_user_message_content_with_file():
+    import shutil
+    from pathlib import Path
+    from src.backend.chat_utils import build_user_message_content
+
+    test_dir = Path("uploads/test_build_msg")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    test_file = test_dir / "note.txt"
+    test_file.write_text("hello attachment", encoding="utf-8")
+
+    content, meta = build_user_message_content(
+        "请看文件",
+        [{"filename": "note.txt", "path": str(test_file), "kind": "file"}],
+    )
+    text_blob = content if isinstance(content, str) else str(content)
+    assert "hello attachment" in text_blob
+    assert len(meta) == 1
+    shutil.rmtree(test_dir)
+
+
 def test_file_uploader_list():
     """FileUploader 应该能列出用户文件。"""
     from pathlib import Path
-    
-    # 创建测试文件
+
     test_dir = Path("uploads/test_user")
     test_dir.mkdir(parents=True, exist_ok=True)
     (test_dir / "file1.txt").write_text("File 1")
     (test_dir / "file2.txt").write_text("File 2")
-    
+
     files = FileUploader.get_user_files("test_user")
     assert len(files) == 2
-    
-    # 清理
+
     import shutil
     shutil.rmtree(test_dir)

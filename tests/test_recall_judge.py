@@ -1,4 +1,4 @@
-from src.memory.recall_judge import judge_memories
+from src.memory.recall_judge import filter_relevant_memories, judge_memories
 
 
 def test_recall_judge_drops_superseded_memory():
@@ -64,3 +64,24 @@ def test_recall_judge_drops_scope_mismatch():
     )
 
     assert judged == []
+
+
+def test_filter_relevant_memories_drops_zero_overlap():
+    raw = [
+        {
+            "memory_id": "u1_user_pref",
+            "content": "我偏好代码直接、少解释",
+            "memory_type": "user",
+            "user_id": "u1",
+            "score": 0.2,
+        },
+        {
+            "memory_id": "u1_user_math",
+            "content": "用户想学习考研高数",
+            "memory_type": "user",
+            "user_id": "u1",
+            "score": 0.1,
+        },
+    ]
+    kept = filter_relevant_memories("这是什么原因", raw)
+    assert kept == []

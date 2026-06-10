@@ -25,13 +25,13 @@ async def test_write_pipeline_llm_extract(monkeypatch):
         })
         mgr.llm = llm
         tag = uuid.uuid4().hex[:6]
-        ids = await persist_turn_memories(
+        outcome = await persist_turn_memories(
             mgr,
             "帮我写个组件",
             "好的",
             user_id=f"wp_{tag}",
         )
-        assert len(ids) >= 1
+        assert len(outcome.stored) >= 1
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -45,14 +45,15 @@ async def test_write_pipeline_forget_request_deletes_matching_memory(tmp_path):
         user_id="forget_user",
     )
 
-    ids = await persist_turn_memories(
+    outcome = await persist_turn_memories(
         mgr,
         "忘掉我之前关于 Java 的偏好",
         "好的",
         user_id="forget_user",
     )
 
-    assert ids == []
+    assert outcome.stored == []
+    assert len(outcome.deleted) == 1
     assert await mgr.storage.retrieve(old.id) is None
     results = await mgr.retrieve("Java 偏好", user_id="forget_user")
     assert all(r["memory_id"] != old.id for r in results)

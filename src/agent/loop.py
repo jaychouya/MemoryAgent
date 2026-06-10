@@ -13,6 +13,8 @@ from src.agent.context import ContextCompressor
 from src.agent.query_loop import execute_query_loop, query_loop, LoopEvent, LoopEventType
 from src.agent.loop_state import LoopState, LoopExitReason
 from src.memory.citations import build_citations, citations_to_legacy_strings
+from src.memory.recall_judge import filter_relevant_memories
+from src.backend.chat_utils import build_user_message_content
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,30 @@ class AgentLoop:
         self.user_id = None
         self.session_id = None
 
+    def _append_user_message(
+        self,
+        messages: List[Dict],
+        user_message: str,
+        attachments: Optional[List[Dict]] = None,
+    ) -> str:
+        content, att_meta = build_user_message_content(user_message, attachments)
+        user_msg: Dict[str, Any] = {
+            "role": "user",
+            "content": content,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if att_meta:
+            user_msg["attachments"] = att_meta
+        messages.append(user_msg)
+        if isinstance(content, str):
+            return content
+        texts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+        if texts:
+            return " ".join(texts)
+        if att_meta:
+            return f"用户上传了 {len(att_meta)} 个附件"
+        return user_message
+
     async def run(
         self,
         user_message: str,
@@ -82,31 +108,33 @@ class AgentLoop:
         session_id: str = None,
         user_id: str = None,
         project_id: str = None,
+        attachments: Optional[List[Dict]] = None,
     ) -> AgentResult:
         self.user_id = user_id
         self.session_id = session_id
         self._project_id = project_id
 
         messages = list(context_messages or [])
-        messages.append({"role": "user", "content": user_message})
+        query_text = self._append_user_message(messages, user_message, attachments)
 
         memories = []
         memory_citations = []
         if self.memory and user_id:
             try:
-                memories = await self.memory.retrieve(
+                raw = await self.memory.retrieve(
                     user_id=user_id,
-                    query=user_message,
+                    query=query_text,
                     session_id=session_id,
                     project_id=project_id,
                     top_k=5,
                 )
-                memory_citations = build_citations(memories[:5])
+                memories = filter_relevant_memories(query_text, raw)
+                memory_citations = build_citations(memories)
             except Exception as e:
                 logger.warning(f"Memory retrieval failed: {e}")
 
         if not system_prompt:
-            system_prompt = self._build_system_prompt(memories)
+            system_prompt = self._build_system_prompt(memories, query_text)
 
         loop_state = LoopState(
             messages=messages,
@@ -149,30 +177,32 @@ class AgentLoop:
         user_id: str = None,
         project_id: str = None,
         loop_out: Optional[Dict[str, Any]] = None,
+        attachments: Optional[List[Dict]] = None,
     ) -> AsyncGenerator[LoopEvent, None]:
         self.user_id = user_id
         self.session_id = session_id
         self._project_id = project_id
         messages = list(context_messages or [])
-        messages.append({"role": "user", "content": user_message})
+        query_text = self._append_user_message(messages, user_message, attachments)
 
         memories = []
         if self.memory and user_id:
             try:
-                memories = await self.memory.retrieve(
+                raw = await self.memory.retrieve(
                     user_id=user_id,
-                    query=user_message,
+                    query=query_text,
                     session_id=session_id,
                     project_id=project_id,
                     top_k=5,
                 )
+                memories = filter_relevant_memories(query_text, raw)
             except Exception as e:
                 logger.warning(f"Memory retrieval failed: {e}")
 
         if not system_prompt:
-            system_prompt = self._build_system_prompt(memories)
+            system_prompt = self._build_system_prompt(memories, query_text)
 
-        citations = build_citations(memories[:5]) if memories else []
+        citations = build_citations(memories) if memories else []
         loop_state = LoopState(
             messages=messages,
             system_prompt=system_prompt,
@@ -205,7 +235,7 @@ class AgentLoop:
             output_recovery_count=loop_state.output_recovery_count,
         )
 
-    def _build_system_prompt(self, memories: List = None) -> str:
+    def _build_system_prompt(self, memories: List = None, user_message: str = "") -> str:
         assembler = get_prompt_assembler()
         environment_info = {
             "timestamp": datetime.now().isoformat(),
@@ -217,6 +247,11 @@ class AgentLoop:
             for mem in memories:
                 if isinstance(mem, dict):
                     memory_index += f"- {mem.get('content', '')}\n"
+        else:
+            memory_index = (
+                "（未命中相关记忆）请直接回答用户当前问题，"
+                "不要引用、猜测或套用任何用户偏好与历史记忆。"
+            )
         return assembler.assemble(
             environment_info=environment_info,
             memory_index=memory_index,

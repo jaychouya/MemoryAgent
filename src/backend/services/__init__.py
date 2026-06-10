@@ -1,6 +1,8 @@
 import logging
 from typing import List, Dict, Any, Optional, Callable, Awaitable
 import os
+import re
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,7 @@ class LLMService:
         if self.api_key:
             try:
                 from openai import AsyncOpenAI
-                kwargs = {"api_key": self.api_key}
+                kwargs = {"api_key": self.api_key, "timeout": 90.0}
                 if self.base_url:
                     kwargs["base_url"] = self.base_url
                 self.client = AsyncOpenAI(**kwargs)
@@ -33,12 +35,7 @@ class LLMService:
         tools: List[Dict] = None
     ) -> Dict[str, Any]:
         if not self.client:
-            msg = message or ""
-            if messages:
-                for m in messages:
-                    if m.get("role") == "user":
-                        msg = m.get("content", "")
-                        break
+            msg = self._extract_user_message(message, messages)
             return {
                 "content": self._fallback_response(msg, is_configured=False),
                 "stop_reason": "end_turn"
@@ -106,22 +103,32 @@ class LLMService:
                             "arguments": tc.function.arguments
                         }
                     })
+            elif tools:
+                xml_tool_call = self._parse_xml_tool_call(content)
+                if xml_tool_call:
+                    result["content"] = ""
+                    result["tool_calls"] = [xml_tool_call]
             
             return result
 
         except Exception as e:
             logger.error(f"LLM generation error: {e}")
             error_msg = str(e)
+            user_msg = self._extract_user_message(message, messages)
             if "401" in error_msg or "api_key" in error_msg.lower():
-                return self._fallback_response(message, is_configured=True, error="API Key 无效，请检查并重新配置。")
+                err = "API Key 无效，请检查并重新配置。"
             elif "429" in error_msg:
-                return self._fallback_response(message, is_configured=True, error="请求过于频繁，请稍后再试。")
+                err = "请求过于频繁，请稍后再试。"
             elif "Connection error" in error_msg or "connect" in error_msg.lower():
-                return self._fallback_response(message, is_configured=True, error=f"无法连接到AI服务 ({self.base_url})，请检查API地址是否正确。")
+                err = f"无法连接到AI服务 ({self.base_url})，请检查API地址是否正确。"
             elif "404" in error_msg:
-                return self._fallback_response(message, is_configured=True, error=f"模型 '{self.model}' 不存在，请检查模型名称是否正确。")
+                err = f"模型 '{self.model}' 不存在，请检查模型名称是否正确。"
             else:
-                return self._fallback_response(message, is_configured=True, error=f"AI服务出错: {error_msg[:100]}")
+                err = f"AI服务出错: {error_msg[:100]}"
+            return {
+                "content": self._fallback_response(user_msg, is_configured=True, error=err),
+                "stop_reason": "end_turn",
+            }
 
     async def generate_response_stream(
         self,
@@ -141,12 +148,7 @@ class LLMService:
                 tools=tools,
             )
         if not self.client:
-            msg = message or ""
-            if messages:
-                for m in messages:
-                    if m.get("role") == "user":
-                        msg = m.get("content", "")
-                        break
+            msg = self._extract_user_message(message, messages)
             content = self._fallback_response(msg, is_configured=False)
             if on_token:
                 for ch in content:
@@ -198,20 +200,82 @@ class LLMService:
             }
         except Exception as e:
             logger.error(f"LLM stream error: {e}")
-            fallback = self.generate_response(
-                message=message,
-                messages=messages,
-                context=context,
-                system_prompt=system_prompt,
-            )
-            return await self.generate_response(
-                message=message,
-                messages=messages,
-                context=context,
-                system_prompt=system_prompt,
-            )
+            error_msg = str(e)
+            user_msg = self._extract_user_message(message, messages)
+            if "401" in error_msg or "api_key" in error_msg.lower():
+                err = "API Key 无效，请检查并重新配置。"
+            elif "429" in error_msg:
+                err = "请求过于频繁，请稍后再试。"
+            elif "Connection error" in error_msg or "connect" in error_msg.lower():
+                err = f"无法连接到AI服务 ({self.base_url})，请检查API地址是否正确。"
+            elif "404" in error_msg:
+                err = f"模型 '{self.model}' 不存在，请检查模型名称是否正确。"
+            else:
+                err = f"AI服务出错: {error_msg[:100]}"
+            content = self._fallback_response(user_msg, is_configured=True, error=err)
+            if on_token:
+                for ch in content:
+                    await on_token(ch)
+            return {"content": content, "stop_reason": "end_turn", "streamed": True}
+
+    def _parse_xml_tool_call(self, content: str) -> Optional[Dict[str, Any]]:
+        if not content or "<tool_call>" not in content:
+            return None
+        func_match = re.search(
+            r"<function=([a-zA-Z0-9_]+)>(.*?)</function>",
+            content,
+            re.S,
+        )
+        if not func_match:
+            return None
+
+        name = func_match.group(1)
+        body = func_match.group(2)
+        params: Dict[str, Any] = {}
+        for key, value in re.findall(
+            r"<parameter=([a-zA-Z0-9_]+)>(.*?)</parameter>",
+            body,
+            re.S,
+        ):
+            value = value.strip()
+            if value.isdigit():
+                params[key] = int(value)
+            else:
+                params[key] = value
+
+        import json
+
+        return {
+            "id": f"call_{uuid.uuid4().hex[:12]}",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(params, ensure_ascii=False),
+            },
+        }
     
+    def _extract_user_message(
+        self,
+        message: Optional[str],
+        messages: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        if message:
+            return message
+        if messages:
+            for m in reversed(messages):
+                if m.get("role") == "user":
+                    return m.get("content", "") or ""
+        return ""
+
     def _fallback_response(self, message: str, is_configured: bool = False, error: str = None) -> str:
+        message = message or ""
+        if error and is_configured:
+            label = f"「{message}」" if message else "你的问题"
+            return (
+                f"关于{label}，调用模型时出错。\n\n"
+                f"⚠️ {error}\n\n"
+                "请检查左上角「配置」中的 API Key、Base URL 和模型名称。"
+            )
         message_lower = message.lower()
         
         if "你好" in message or "hello" in message_lower or "hi" in message_lower:
@@ -246,48 +310,9 @@ class LLMService:
                 return f"收到你的消息：「{message}」\n\n目前我处于基础模式，回答能力有限。如需更智能的回答，请配置AI模型：\n\n👉 点击左上角「配置」按钮\n👉 选择AI厂商\n👉 填写API Key\n\n配置后我就能真正理解你的问题并给出有用的回答了！"
     
     def _clean_markdown(self, text: str) -> str:
-        """清理 Markdown 格式，转换为纯文本。"""
-        import re
-        
-        # 移除代码块标记
-        text = re.sub(r'```[\w]*\n', '', text)
-        text = re.sub(r'```', '', text)
-        
-        # 移除行内代码标记
-        text = re.sub(r'`([^`]+)`', r'\1', text)
-        
-        # 移除标题标记
-        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-        
-        # 移除加粗标记
-        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-        
-        # 移除斜体标记
-        text = re.sub(r'\*([^*]+)\*', r'\1', text)
-        
-        # 移除删除线标记
-        text = re.sub(r'~~([^~]+)~~', r'\1', text)
-        
-        # 移除链接标记
-        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-        
-        # 移除图片标记
-        text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
-        
-        # 移除引用标记
-        text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
-        
-        # 移除列表标记（保留内容）
-        text = re.sub(r'^[\s]*[-*+]\s+', '', text, flags=re.MULTILINE)
-        text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)
-        
-        # 移除水平线
-        text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
-        
-        # 清理多余的空行
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        
-        return text.strip()
+        """移除工具 XML 泄漏，规范化数学 Markdown 供前端渲染。"""
+        from src.agent.output_format import normalize_agent_output
+        return normalize_agent_output(text)
 
 
 llm_service = None

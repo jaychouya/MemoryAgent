@@ -67,14 +67,19 @@ class ToolRegistry:
         """Get all read-only tools."""
         return self.get_by_permission(ToolPermission.READ_ONLY)
     
-    def get_function_schemas(self) -> List[Dict]:
+    def get_function_schemas(self, exclude: Optional[Set[str]] = None) -> List[Dict]:
         """
         Get all tool schemas for LLM function calling.
         
         Returns:
             List of OpenAI function schemas
         """
-        return [tool.to_function_schema() for tool in self._tools.values()]
+        excluded = exclude or set()
+        return [
+            tool.to_function_schema()
+            for tool in self._tools.values()
+            if tool.name not in excluded
+        ]
     
     def check_permission(self, tool_name: str, action: str = "execute") -> bool:
         """

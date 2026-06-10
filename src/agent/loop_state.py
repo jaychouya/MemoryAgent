@@ -27,6 +27,7 @@ class LoopState:
     is_plan_mode: bool = False
     has_attempted_reactive_compact: bool = False
     output_recovery_count: int = 0
+    empty_after_tools_retries: int = 0
     system_prompt: str = ""
     final_content: str = ""
 

@@ -248,6 +248,9 @@ class MemoryManager:
         Returns:
             List of memory dicts with content and metadata
         """
+        from src.utils import as_int
+
+        top_k = as_int(top_k, 5)
         results = await self.retrieval.retrieve(
             query=query,
             user_id=user_id,

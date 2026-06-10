@@ -78,6 +78,162 @@ async def test_execute_query_loop_tool_round():
 
 
 @pytest.mark.asyncio
+async def test_execute_query_loop_allows_web_fetch_after_web_search():
+    llm = AsyncMock()
+    llm.generate_response = AsyncMock(side_effect=[
+        {
+            "content": "",
+            "stop_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "web_search", "arguments": '{"query": "2024 数一"}'},
+            }],
+        },
+        {
+            "content": "",
+            "stop_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "c2",
+                "type": "function",
+                "function": {"name": "web_fetch", "arguments": '{"url": "https://example.com"}'},
+            }],
+        },
+        {"content": "正常讲解", "stop_reason": "end_turn"},
+    ])
+
+    class Tool:
+        def __init__(self, name):
+            self.name = name
+
+    registry = MagicMock()
+    registry.get_all.return_value = [
+        Tool("memory_search"),
+        Tool("web_search"),
+        Tool("web_fetch"),
+    ]
+    registry.get_function_schemas.return_value = [{"type": "function"}]
+    from src.agent.tools.base import ToolResult
+    registry.execute_parallel = AsyncMock(return_value=[
+        ToolResult(success=True, content="ok")
+    ])
+
+    state = LoopState(messages=[{"role": "user", "content": "查真题"}], system_prompt="s")
+    state, reason, content = await execute_query_loop(
+        llm, state, tool_registry=registry, max_turns=5
+    )
+
+    assert reason == LoopExitReason.COMPLETED
+    assert content == "正常讲解"
+    assert state.tools_called == ["web_search", "web_fetch"]
+
+
+@pytest.mark.asyncio
+async def test_execute_query_loop_does_not_stream_final_after_tool_call():
+    llm = AsyncMock()
+    llm.generate_response = AsyncMock(side_effect=[
+        {
+            "content": "",
+            "stop_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "web_fetch", "arguments": '{"url": "https://example.com"}'},
+            }],
+        },
+        {"content": "最终回复", "stop_reason": "end_turn"},
+    ])
+    streamed = []
+
+    async def stream_gen(**kwargs):
+        cb = kwargs.get("on_token")
+        if cb:
+            await cb("<tool_call>")
+        return {"content": "<tool_call>", "stop_reason": "end_turn", "streamed": True}
+
+    llm.generate_response_stream = stream_gen
+
+    class Tool:
+        def __init__(self, name):
+            self.name = name
+
+    registry = MagicMock()
+    registry.get_all.return_value = [Tool("web_fetch")]
+    registry.get_function_schemas.return_value = [{"type": "function"}]
+    from src.agent.tools.base import ToolResult
+    registry.execute_parallel = AsyncMock(return_value=[
+        ToolResult(success=True, content="page")
+    ])
+
+    def collect(event):
+        if event.type.value == "token":
+            streamed.append(event.content)
+
+    state = LoopState(messages=[{"role": "user", "content": "抓网页"}], system_prompt="s")
+    _, reason, content = await execute_query_loop(
+        llm,
+        state,
+        tool_registry=registry,
+        max_turns=5,
+        on_event=collect,
+    )
+
+    assert reason == LoopExitReason.COMPLETED
+    assert content == "最终回复"
+    assert "<tool_call>" not in streamed
+
+
+@pytest.mark.asyncio
+async def test_execute_query_loop_recovers_empty_response_after_tools():
+    llm = AsyncMock()
+    llm.generate_response = AsyncMock(side_effect=[
+        {
+            "content": "",
+            "stop_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "web_search", "arguments": '{"query": "test"}'},
+            }],
+        },
+        {"content": "", "stop_reason": "end_turn"},
+        {"content": "", "stop_reason": "end_turn"},
+    ])
+
+    class Tool:
+        def __init__(self, name):
+            self.name = name
+
+    registry = MagicMock()
+    registry.get_all.return_value = [Tool("web_search"), Tool("web_fetch")]
+    registry.get_function_schemas.return_value = [{"type": "function"}]
+    from src.agent.tools.base import ToolResult
+    registry.execute_parallel = AsyncMock(return_value=[
+        ToolResult(success=True, content="搜索结果：2024考研数一真题链接")
+    ])
+
+    streamed = []
+
+    def collect(event):
+        if event.type.value == "token":
+            streamed.append(event.content)
+
+    state = LoopState(messages=[{"role": "user", "content": "查真题"}], system_prompt="s")
+    state, reason, content = await execute_query_loop(
+        llm,
+        state,
+        tool_registry=registry,
+        max_turns=6,
+        on_event=collect,
+    )
+
+    assert reason == LoopExitReason.COMPLETED
+    assert content.strip()
+    assert "工具结果" in content or "搜索结果" in content
+    assert any("2024考研" in s for s in streamed)
+
+
+@pytest.mark.asyncio
 async def test_reactive_compact_on_prompt_too_long():
     llm = AsyncMock()
     llm.generate_response = AsyncMock(side_effect=[
