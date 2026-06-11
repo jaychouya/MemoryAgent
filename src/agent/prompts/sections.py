@@ -182,10 +182,22 @@ TOOL_USAGE = PromptSection(
 )
 
 
+def _memory_authority_section() -> PromptSection:
+    from src.memory.authority import AUTHORITY_PREAMBLE
+
+    return PromptSection(
+        name="memory_authority",
+        content=AUTHORITY_PREAMBLE,
+        section_type=SectionType.STATIC,
+        cache_priority=25,
+    )
+
+
 STATIC_SECTIONS_BASE = [
     ROLE_DEFINITION,
     SAFETY_CONSTRAINTS,
     BEHAVIOR_GUIDELINES,
+    _memory_authority_section(),
     TOOL_USAGE,
 ]
 

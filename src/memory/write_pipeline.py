@@ -12,6 +12,7 @@ from src.memory.auto_write import (
     extract_candidates,
     extract_forget_query,
     is_duplicate,
+    is_transient_utterance,
     memory_fingerprint,
     texts_similar,
     TYPE_MAP,
@@ -110,6 +111,9 @@ async def persist_turn_memories(
     session_id: str = None,
     project_id: str = None,
 ) -> TurnWriteOutcome:
+    if is_transient_utterance(user_message) and len((assistant_message or "").strip()) < 120:
+        return TurnWriteOutcome()
+
     forget_query = extract_forget_query(user_message)
     if forget_query:
         removed = await _delete_matching_memories(memory, forget_query, user_id, project_id)

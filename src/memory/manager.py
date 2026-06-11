@@ -20,7 +20,10 @@ from src.memory.persistent_vector import PersistentVectorStore
 from src.memory.conflicts import find_conflicts
 from src.memory.exclusions import should_exclude, get_exclusion_reason
 from src.memory.embeddings import embed_text
+from src.memory.trust import initial_trust, boost_on_store, boost_on_recall
 from src.utils.config import settings
+
+SEMANTIC_DEDUP_THRESHOLD = 0.92
 
 logger = logging.getLogger(__name__)
 
@@ -83,16 +86,24 @@ class MemoryManager:
             reason = get_exclusion_reason(content)
             logger.info(f"Memory excluded ({reason.value}): {content[:50]}...")
             return None
-        
+
+        if user_id and await self._is_semantic_duplicate(content, user_id):
+            logger.info(f"Memory skipped (semantic dedup): {content[:50]}...")
+            return None
+
         # Create memory item
+        meta = {
+            "user_id": user_id,
+            "trust_score": initial_trust(memory_type.value),
+            **(metadata or {}),
+        }
+        if "trust_score" not in meta:
+            meta["trust_score"] = initial_trust(memory_type.value)
         memory = MemoryItem.create(
             memory_type=memory_type,
             content=content,
             description=description,
-            metadata={
-                "user_id": user_id,
-                **(metadata or {})
-            }
+            metadata=meta,
         )
         
         # Store
@@ -121,6 +132,42 @@ class MemoryManager:
             )
             return memory
         return None
+
+    async def _is_semantic_duplicate(self, content: str, user_id: str) -> bool:
+        try:
+            query_emb = embed_text(content)
+            hits = self.vector_store.search(
+                query_embedding=query_emb,
+                top_k=3,
+                user_id=user_id,
+            )
+            for hit in hits:
+                score = float(hit.get("score") or 0)
+                if score >= SEMANTIC_DEDUP_THRESHOLD:
+                    return True
+        except Exception as e:
+            logger.debug(f"Semantic dedup skip: {e}")
+        return False
+
+    async def record_recall_usage(self, memory_ids: List[str]) -> None:
+        for mid in memory_ids:
+            if not mid:
+                continue
+            try:
+                item = await self.storage.retrieve(mid)
+                if not item:
+                    continue
+                trust = boost_on_recall(item.metadata.get("trust_score"))
+                await self.storage.update_metadata(
+                    mid,
+                    {
+                        "trust_score": trust,
+                        "recall_count": int(item.metadata.get("recall_count") or 0) + 1,
+                        "last_recalled_at": datetime.now().isoformat(),
+                    },
+                )
+            except Exception as e:
+                logger.debug(f"Trust bump skip {mid}: {e}")
 
     async def _auto_supersede_conflicts(self, memory: MemoryItem, user_id: str) -> None:
         rows = self.storage.index.search(

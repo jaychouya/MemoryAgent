@@ -1,26 +1,10 @@
 from src.mcp_server.workspace import scope_summary
+from src.memory.authority import GROUND_TRUTH, PRE_ACTION
 
-_GROUND_TRUTH = """
-### 权威层级（Ground Truth）
-
-| 优先级 | 来源 | 用途 |
-| --- | --- | --- |
-| 1 | 本轮已注入的记忆块（`memory_recall` / `memory_export` 的 `prompt_block`） | 用户偏好、项目决策、禁忌、可复用事实 |
-| 2 | 当前工作区代码、终端输出、用户附件 | 运行时状态 |
-| 3 | 官方文档、README | API、版本、配置细节 |
-| 4 | 模型训练知识 | 仅参考，须与 1-3 核对 |
-
-**冲突规则：** 运行时状态以 2 为准；偏好与历史决策以 1 为准；版本敏感细节以 3 为准。注入记忆与主观假设冲突时，**注入记忆优先**。
-""".strip()
-
-_PRE_ACTION = """
-### 行动前检查（每轮最多 recall 一次）
-
-1. **清点**：上下文中是否已有 `[user]` / `[feedback]` / `[project]` / `[reference]` 记忆块？
-2. **匹配**：当前问题是否已被这些记忆覆盖？
-3. **决策**：已覆盖 → 直接引用并回答，**禁止**为「验证」再调 `memory_recall`、搜仓库或读文件重找同一事实。
-4. **未覆盖**或话题已切换 → 调用一次 `memory_recall(query=用户当前问题)`。
-""".strip()
+_GROUND_TRUTH = GROUND_TRUTH
+_PRE_ACTION = PRE_ACTION + (
+    "\n\n（MCP 侧：未覆盖时调用一次 `memory_recall(query=用户当前问题)`。）"
+)
 
 _WORKFLOW = """
 ### 每轮流程

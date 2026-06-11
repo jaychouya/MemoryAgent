@@ -13,6 +13,7 @@ from src.memory.embeddings import embed_text, local_embed
 from src.memory.rerank import rerank_candidates
 from src.memory.query_rewrite import rewrite_query_for_retrieval
 from src.memory.recall_judge import judge_memories
+from src.memory.trust import apply_trust_to_results, initial_trust
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
@@ -112,26 +113,14 @@ class MemoryRetrieval:
                 if r.get("user_id") == user_id
             ]
 
-        selection_reason = "fallback_all_user"
-        if search_query and keyword_results:
-            try:
-                query_embedding = embed_text(search_query)
-                merged = await self.hybrid.retrieve(
-                    query=search_query,
-                    query_embedding=query_embedding,
-                    keyword_results=keyword_results,
-                    top_k=pool,
-                    user_id=user_id,
-                )
-                results = self._normalize_hybrid_results(merged, pool)
-                selection_reason = "keyword+vector"
-            except Exception as e:
-                logger.warning(f"Hybrid retrieval failed, using keyword only: {e}")
-                results = keyword_results[:limit]
-                selection_reason = "keyword_only"
-        else:
-            results = keyword_results[:limit]
-            selection_reason = "fallback_all_user" if not query else "keyword_only"
+        results, selection_reason = await self._cascade_retrieve(
+            search_query=search_query,
+            keyword_results=keyword_results,
+            user_id=user_id,
+            project_id=project_id,
+            pool=pool,
+            limit=limit,
+        )
 
         if user_id:
             results = [
@@ -163,13 +152,80 @@ class MemoryRetrieval:
                 result["selection_reason"] = selection_reason
 
         enriched = await self._enrich_provenance(results[:pool])
-        return judge_memories(
+        for row in enriched:
+            if row.get("trust_score") is None:
+                row["trust_score"] = initial_trust(
+                    row.get("memory_type") or row.get("type") or "user"
+                )
+        enriched = apply_trust_to_results(enriched)
+        judged = judge_memories(
             query or search_query,
             enriched,
             user_id=user_id,
             project_id=project_id,
             limit=limit,
         )
+        for row in judged:
+            row["selection_reason"] = selection_reason
+        return judged
+
+    async def _cascade_retrieve(
+        self,
+        search_query: str,
+        keyword_results: List[Dict],
+        user_id: str,
+        project_id: str,
+        pool: int,
+        limit: int,
+    ) -> tuple:
+        """hybrid → dense → lexical → sqlite fallback (memory-os inspired)."""
+        if search_query and keyword_results:
+            try:
+                query_embedding = embed_text(search_query)
+                merged = await self.hybrid.retrieve(
+                    query=search_query,
+                    query_embedding=query_embedding,
+                    keyword_results=keyword_results,
+                    top_k=pool,
+                    user_id=user_id,
+                )
+                results = self._normalize_hybrid_results(merged, pool)
+                if results:
+                    return results, "keyword+vector"
+            except Exception as e:
+                logger.warning(f"Hybrid retrieval failed: {e}")
+
+            try:
+                query_embedding = embed_text(search_query)
+                dense = self.vector_store.search(
+                    query_embedding=query_embedding,
+                    top_k=pool,
+                    user_id=user_id,
+                )
+                results = self._normalize_hybrid_results(dense, pool)
+                if results:
+                    return results, "dense_only"
+            except Exception as e:
+                logger.warning(f"Dense retrieval failed: {e}")
+
+            if keyword_results:
+                return keyword_results[:pool], "keyword_only"
+
+        if keyword_results:
+            return keyword_results[:limit], "keyword_only"
+
+        if user_id:
+            fallback = self.storage.index.search(
+                query="",
+                user_id=user_id,
+                project_id=project_id,
+                limit=limit * 2,
+            )
+            fallback = [r for r in fallback if r.get("user_id") == user_id]
+            if fallback:
+                return fallback[:limit], "fallback_all_user"
+
+        return [], "empty"
 
     async def _enrich_provenance(self, results: List[Dict]) -> List[Dict]:
         import asyncio
@@ -196,6 +252,9 @@ class MemoryRetrieval:
                     "superseded_by",
                     "valid_until",
                     "conflict_reason",
+                    "trust_score",
+                    "recall_count",
+                    "last_recalled_at",
                 ):
                     if item.metadata.get(key) is not None:
                         row[key] = item.metadata.get(key)
