@@ -15,7 +15,7 @@ bash /path/to/MemoryAgent/scripts/install-sidecar.sh . --claude
 | 产物 | 作用 |
 |------|------|
 | `.cursor/mcp.json` | Cursor 项目级 MCP，无需手抄 example |
-| `.cursor/rules/memory-sidecar.mdc` | 侧车 prompt：每轮先 recall 再回答 |
+| `.cursor/rules/memory-sidecar.mdc` | 侧车 prompt：权威层级 + 行动前检查（每轮最多 recall 一次） |
 | `.memoryagent/memories/` | 记忆落在当前仓库，可 Git 忽略 |
 
 安装后：**重载 Cursor MCP** 或重启 IDE。
@@ -45,9 +45,12 @@ export MEMORYAGENT_PROJECT_ID=my-repo
 
 `python3 -m src.mcp_server.server` 启动后，MCP `instructions` 含：
 
-1. 回答前 `memory_recall`
-2. 回答后按需 `memory_store`
-3. 需要整段上下文时用 `memory_export` → `prompt_block`
+1. **权威层级**：已注入记忆优先于主观假设
+2. **行动前检查**：上下文已有记忆块 → 禁止重复 `memory_recall`
+3. 未覆盖时再 `memory_recall`（每轮最多一次）
+4. 回答后按需 `memory_store`；整段上下文用 `memory_export` → `prompt_block`
+
+详见 [memory-os-layer7-adaptation.md](memory-os-layer7-adaptation.md)。
 
 ## 工具（v2）
 

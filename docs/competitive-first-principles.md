@@ -57,6 +57,7 @@ MemoryAgent 的边界：**Remember + Align**，不替代 Coding Agent 的 **Act 
 
 | 差距 | 对标 | 建议 |
 |------|------|------|
+| **权威使用（Layer 7）** | memory-os Ground Truth | ✅ MCP + Cursor rule：层级 + 行动前检查 + 禁止重复 recall（见 `memory-os-layer7-adaptation.md`） |
 | **时序失效** | Zep valid_until | ✅ 显式 `supersedes`：旧记忆写入 `superseded_by` / `valid_until`，召回过滤失效项 |
 | **召回裁判器** | Mem0/Zep 二阶段检索 | ✅ `RecallJudge` 本地规则裁判：过滤失效/越权记忆，输出 `judge_score` / `judge_reason` |
 | **记忆 CRUD UI** | Mem0 dashboard | ✅ MemoryPanel 支持 list / edit / delete / provenance / eval |

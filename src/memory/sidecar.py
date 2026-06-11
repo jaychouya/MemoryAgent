@@ -96,6 +96,10 @@ def build_cursor_rules_block(
         lines.append("- （当前无记忆）")
     lines.extend([
         "",
-        "每轮对话前可调用 `memory_recall` 刷新；用户更正偏好时调用 `memory_store`。",
+        "## 权威层级",
+        "以上记忆为 Ground Truth（优先级 1）：回答时直接引用，禁止为验证再 recall 或搜仓库重找。",
+        "与代码/终端冲突时以运行时为准；与主观假设冲突时以本记忆为准。",
+        "",
+        "用户更正偏好时调用 `memory_store`；仅当本块未覆盖当前问题时再 `memory_recall`。",
     ])
     return "\n".join(lines)
