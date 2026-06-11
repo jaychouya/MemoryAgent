@@ -162,14 +162,14 @@ class MemoryRetrieval:
             if "selection_reason" not in result:
                 result["selection_reason"] = selection_reason
 
-        judged = judge_memories(
+        enriched = await self._enrich_provenance(results[:pool])
+        return judge_memories(
             query or search_query,
-            results[:pool],
+            enriched,
             user_id=user_id,
             project_id=project_id,
             limit=limit,
         )
-        return await self._enrich_provenance(judged)
 
     async def _enrich_provenance(self, results: List[Dict]) -> List[Dict]:
         import asyncio
