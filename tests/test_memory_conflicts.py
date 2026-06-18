@@ -27,6 +27,7 @@ async def test_store_auto_supersedes_old_preference(tmp_path):
     assert old_after.metadata["conflict_reason"]
     assert all(r["memory_id"] != old.id for r in results)
     assert any(r["memory_id"] == new.id for r in results)
+    assert await manager.count_memories("u1") == 1
 
 
 @pytest.mark.asyncio

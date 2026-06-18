@@ -15,6 +15,7 @@ def test_mandatory_memory_block_lists_ids():
 def test_mandatory_memory_empty_forbids_guessing():
     block = format_mandatory_memory_block([])
     assert "禁止引用" in block
+    assert "权威层级" in block
 
 
 def test_detect_scene_exam():

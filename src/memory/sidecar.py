@@ -18,6 +18,7 @@ def build_export_payload(
     project_id: Optional[str] = None,
     scope: str = "user",
     version: str = SIDECAR_V2,
+    recall_health: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     enriched = []
     for m in memories:
@@ -28,6 +29,8 @@ def build_export_payload(
             "user_id": m.get("user_id", user_id),
             "project_id": m.get("project_id") or project_id,
             "score": m.get("score", 0.0),
+            "trust_score": m.get("trust_score"),
+            "effective_score": m.get("effective_score"),
             "is_stale": m.get("is_stale", False),
             "selection_reason": m.get("selection_reason", ""),
             "priority": _priority(m.get("memory_type", "user")),
@@ -49,7 +52,12 @@ def build_export_payload(
             if m.get(key) is not None:
                 item[key] = m.get(key)
         enriched.append(item)
-    enriched.sort(key=lambda x: (-x["priority"], -float(x.get("score") or 0)))
+    enriched.sort(
+        key=lambda x: (
+            -x["priority"],
+            -float(x.get("effective_score") or x.get("score") or 0),
+        )
+    )
 
     lines = []
     for item in enriched:
@@ -68,6 +76,7 @@ def build_export_payload(
         "memories": enriched,
         "prompt_block": "\n".join(lines),
         "cursor_rules_block": cursor_rules,
+        "recall_health": recall_health or {},
         "generated_at": datetime.now().isoformat(),
     }
 

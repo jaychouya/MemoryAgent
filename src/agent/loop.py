@@ -2,6 +2,7 @@
 Agent Loop — delegates to queryLoop (Claude Code-style main loop).
 """
 
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from dataclasses import dataclass, field
@@ -12,10 +13,9 @@ from src.agent.prompts.assembler import get_prompt_assembler
 from src.agent.context import ContextCompressor
 from src.agent.query_loop import execute_query_loop, query_loop, LoopEvent, LoopEventType
 from src.agent.loop_state import LoopState, LoopExitReason
-from src.memory.citations import build_citations, citations_to_legacy_strings
-from src.memory.recall_judge import filter_relevant_memories
+from src.memory.citations import citations_to_legacy_strings
+from src.memory.recall_bundle import recall_for_prompt
 from src.memory.inject import format_mandatory_memory_block
-from src.memory.recall_health import diagnose_recall
 from src.agent.prompts.scene import detect_scene
 from src.backend.chat_utils import build_user_message_content
 
@@ -232,40 +232,15 @@ class AgentLoop:
         project_id: str = None,
         top_k: int = 5,
     ):
-        if not self.memory or not user_id:
-            return [], [], diagnose_recall(query_text, [], user_memory_count=0)
-        try:
-            user_count = len(
-                await self.memory.list_memories(user_id=user_id, project_id=project_id, limit=50)
-            )
-            raw = await self.memory.retrieve(
-                user_id=user_id,
-                query=query_text,
-                session_id=self.session_id,
-                project_id=project_id,
-                top_k=top_k,
-                fast=True,
-            )
-            memories = filter_relevant_memories(query_text, raw)
-            citations = build_citations(memories)
-            reason = (raw[0].get("selection_reason") if raw else "") or ""
-            health = diagnose_recall(
-                query_text,
-                memories,
-                user_memory_count=user_count,
-                selection_reason=reason,
-            )
-            ids = [m.get("memory_id") or m.get("id") for m in memories if m.get("memory_id") or m.get("id")]
-            if ids:
-                import asyncio
-                asyncio.create_task(self.memory.record_recall_usage(ids))
-            return memories, citations, health
-        except Exception as e:
-            logger.warning(f"Memory retrieval failed: {e}")
-            health = diagnose_recall(
-                query_text, [], user_memory_count=0, error=str(e),
-            )
-            return [], [], health
+        return await recall_for_prompt(
+            self.memory,
+            query_text,
+            user_id,
+            project_id=project_id,
+            session_id=self.session_id,
+            top_k=top_k,
+            fast=True,
+        )
 
     def _build_system_prompt(self, memories: List = None, user_message: str = "") -> str:
         assembler = get_prompt_assembler()

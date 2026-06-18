@@ -47,6 +47,8 @@ export default function MemoryPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [evalRunning, setEvalRunning] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "memories" | "quality">("overview");
+  const [archivedMemories, setArchivedMemories] = useState<MemoryItem[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -64,7 +66,9 @@ export default function MemoryPanel() {
   const loadStats = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch("/api/memory/stats");
+      const response = await apiFetch(
+        `/api/memory/stats?user_id=${encodeURIComponent(getUserId())}`
+      );
       if (response.ok) {
         setStats(await response.json());
       }
@@ -109,9 +113,16 @@ export default function MemoryPanel() {
 
   const loadMemories = async () => {
     try {
-      const response = await apiFetch(`/api/memories?user_id=${encodeURIComponent(getUserId())}&limit=50`);
-      if (response.ok) {
-        setMemories(await response.json());
+      const uid = encodeURIComponent(getUserId());
+      const [activeRes, archivedRes] = await Promise.all([
+        apiFetch(`/api/memories?user_id=${uid}&limit=50`),
+        apiFetch(`/api/memories/archived?user_id=${uid}&limit=30`),
+      ]);
+      if (activeRes.ok) {
+        setMemories(await activeRes.json());
+      }
+      if (archivedRes.ok) {
+        setArchivedMemories(await archivedRes.json());
       }
     } catch (error) {
       console.error("Failed to load memories:", error);
@@ -232,7 +243,7 @@ export default function MemoryPanel() {
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-slate-50 rounded-lg p-2 text-center">
               <p className="text-lg font-bold text-indigo-600">{stats.total}</p>
-              <p className="text-[10px] text-slate-500">总记忆数</p>
+              <p className="text-[10px] text-slate-500">有效记忆</p>
             </div>
             {Object.entries(typeLabels).map(([type, label]) => (
               <div key={type} className="bg-slate-50 rounded-lg p-2 text-center">
@@ -355,6 +366,36 @@ export default function MemoryPanel() {
                 </div>
               );
             })
+          )}
+          {archivedMemories.length > 0 && (
+            <details
+              className="bg-amber-50 rounded-lg border border-amber-100"
+              open={showArchived}
+              onToggle={(e) => setShowArchived((e.target as HTMLDetailsElement).open)}
+            >
+              <summary className="cursor-pointer text-[11px] font-medium text-amber-900 px-2 py-2">
+                已废弃记忆 ({archivedMemories.length})
+              </summary>
+              <div className="px-2 pb-2 space-y-2">
+                {archivedMemories.map((memory) => (
+                  <div
+                    key={memory.memory_id}
+                    className="bg-white/80 rounded p-2 border border-amber-100 text-[10px] text-slate-600"
+                  >
+                    <p className="font-medium text-slate-700">
+                      {memory.description || memory.memory_id}
+                    </p>
+                    <p className="mt-0.5 line-clamp-3">{memory.content}</p>
+                    {memory.superseded_by && (
+                      <p className="text-amber-800 mt-1">替代者: {memory.superseded_by}</p>
+                    )}
+                    {memory.valid_until && (
+                      <p className="text-slate-400">废弃于: {memory.valid_until}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </div>
       )}

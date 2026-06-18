@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from src.memory.manager import MemoryManager
+from src.memory.recall_bundle import recall_for_prompt
 from src.memory.sidecar import build_export_payload, SIDECAR_V2
 from src.memory.types import MemoryType
 from src.backend.audit import log_memory_event
@@ -35,15 +36,22 @@ async def recall_memories(
     scope: str = "user",
 ) -> Dict[str, Any]:
     manager = get_manager(storage_dir)
-    items = await manager.retrieve(
-        query=query, user_id=user_id, project_id=project_id, top_k=limit
+    memories, _citations, health = await recall_for_prompt(
+        manager,
+        query,
+        user_id,
+        project_id=project_id,
+        top_k=limit,
+        fast=False,
+        filter_judge=False,
     )
     payload = build_export_payload(
         user_id=user_id,
-        memories=items,
+        memories=memories,
         query=query,
         project_id=project_id,
         scope=scope,
+        recall_health=health,
     )
     log_memory_event("recall", user_id, detail={"query": query, "count": payload["count"]})
     return payload

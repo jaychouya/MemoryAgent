@@ -10,6 +10,8 @@ from src.memory.authority import AUTHORITY_PREAMBLE
 from src.memory.write_pipeline import persist_turn_memories
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 
 def test_initial_trust_by_type():
     assert initial_trust("feedback") > initial_trust("reference")
@@ -63,3 +65,35 @@ async def test_transient_turn_skips_write():
     )
     assert out.stored == []
     memory.store.assert_not_called()
+
+
+def test_index_count_filters_user(tmp_path):
+    from src.memory.index import MemoryIndex
+
+    db = tmp_path / "idx.db"
+    idx = MemoryIndex(str(db))
+    idx.add("m1", "喜欢 Python", "user", "u1")
+    idx.add("m2", "喜欢 Java", "user", "u2")
+    assert idx.count(user_id="u1") == 1
+    assert idx.count() == 2
+
+
+@pytest.mark.asyncio
+async def test_recall_bundle_returns_health(tmp_path):
+    from src.memory.manager import MemoryManager
+    from src.memory.recall_bundle import recall_for_prompt
+    from src.memory.types import MemoryType
+
+    manager = MemoryManager(storage_dir=str(tmp_path / "memories"))
+    await manager.store(
+        content="我喜欢 TypeScript",
+        memory_type=MemoryType.USER,
+        user_id="u1",
+    )
+    memories, citations, health = await recall_for_prompt(
+        manager, "TypeScript", "u1",
+    )
+    assert health["status"] in ("ok", "empty")
+    assert health["user_memory_count"] >= 1
+    assert len(memories) >= 1
+    assert len(citations) >= 1

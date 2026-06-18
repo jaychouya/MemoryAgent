@@ -218,6 +218,44 @@ class MemoryIndex:
             conn.commit()
         
         logger.info(f"Deleted from index: {memory_id}")
+
+    def count(self, user_id: Optional[str] = None, project_id: Optional[str] = None) -> int:
+        clauses = []
+        params: List = []
+        if user_id:
+            clauses.append("user_id = ?")
+            params.append(user_id)
+        if project_id:
+            clauses.append("(project_id IS NULL OR project_id = ?)")
+            params.append(project_id)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) FROM memories WHERE {where}",
+                params,
+            ).fetchone()
+            return int(row[0]) if row else 0
+
+    def counts_by_type(
+        self,
+        user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+    ) -> Dict[str, int]:
+        clauses = []
+        params: List = []
+        if user_id:
+            clauses.append("user_id = ?")
+            params.append(user_id)
+        if project_id:
+            clauses.append("(project_id IS NULL OR project_id = ?)")
+            params.append(project_id)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"SELECT memory_type, COUNT(*) FROM memories WHERE {where} GROUP BY memory_type",
+                params,
+            ).fetchall()
+            return {str(t): int(c) for t, c in rows}
     
     def get_stats(self) -> Dict:
         """

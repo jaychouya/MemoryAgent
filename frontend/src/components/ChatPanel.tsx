@@ -21,6 +21,14 @@ interface MemoryWrite {
   action: "stored" | "deleted" | "used" | "conflict_pending";
 }
 
+interface MemoryRecallHealth {
+  status: string;
+  count: number;
+  user_memory_count?: number;
+  warnings?: string[];
+  selection_reason?: string;
+}
+
 interface MemoryCitation {
   memory_id: string;
   memory_type: string;
@@ -32,6 +40,7 @@ interface MemoryCitation {
   selection_reason: string;
   source_quote?: string;
   judge_reason?: string;
+  trust_score?: number;
 }
 
 interface MessageAttachment {
@@ -58,6 +67,7 @@ interface Message {
     tools_called?: string[];
     memories_used?: string[];
     memory_citations?: MemoryCitation[];
+    memory_recall_health?: MemoryRecallHealth;
     memory_writes?: MemoryWrite[];
     stop_reason?: string;
   };
@@ -122,6 +132,20 @@ export default function ChatPanel({
   const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
   const lastRequestRef = useRef<Record<string, unknown> | null>(null);
   const lastAssistantIdRef = useRef<string | null>(null);
+  const [writeToast, setWriteToast] = useState<string | null>(null);
+
+  const notifyMemoryWrites = (writes: MemoryWrite[]) => {
+    if (!writes.length) return;
+    const stored = writes.filter((w) => w.action === "stored").length;
+    const deleted = writes.filter((w) => w.action === "deleted").length;
+    const parts: string[] = [];
+    if (stored > 0) parts.push(`已沉淀 ${stored} 条记忆`);
+    if (deleted > 0) parts.push(`已删除 ${deleted} 条记忆`);
+    if (!parts.length) return;
+    setWriteToast(parts.join("，"));
+    window.setTimeout(() => setWriteToast(null), 4000);
+    window.dispatchEvent(new CustomEvent("memory-agent:writes"));
+  };
 
   const loadSessions = async (): Promise<Session[]> => {
     try {
@@ -458,6 +482,7 @@ export default function ChatPanel({
         setIsLoading(false);
       } else if (payload.type === "memory_injected") {
         const cits = (payload.metadata?.citations as MemoryCitation[]) || [];
+        const recallHealth = payload.metadata?.health as MemoryRecallHealth | undefined;
         memoryCitations = cits;
         memoriesUsed = cits.map((c) => c.content_snippet);
         setMessages((prev) =>
@@ -469,6 +494,7 @@ export default function ChatPanel({
                     ...m.metadata,
                     memory_citations: cits,
                     memories_used: memoriesUsed,
+                    memory_recall_health: recallHealth,
                   },
                 }
               : m
@@ -635,7 +661,7 @@ export default function ChatPanel({
           )
         );
         if (memoryWrites.length > 0) {
-          window.dispatchEvent(new CustomEvent("memory-agent:writes"));
+          notifyMemoryWrites(memoryWrites);
         }
         loadSessions();
         return true;
@@ -688,7 +714,7 @@ export default function ChatPanel({
 
       setMessages((prev) => [...prev, assistantMessage]);
       if (assistantMessage.metadata?.memory_writes?.length) {
-        window.dispatchEvent(new CustomEvent("memory-agent:writes"));
+        notifyMemoryWrites(assistantMessage.metadata.memory_writes);
       }
     } catch (error: any) {
       if (error.name === "AbortError") {
@@ -770,6 +796,14 @@ export default function ChatPanel({
               未命中记忆
             </span>
           )}
+          {metadata.memory_recall_health?.status === "empty_unexpected" && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 bg-amber-100 rounded text-amber-800"
+              title={metadata.memory_recall_health.warnings?.join(" ")}
+            >
+              召回异常
+            </span>
+          )}
           {metadata.memory_writes?.filter((w) => w.action === "stored").length ? (
             <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 rounded text-emerald-700">
               沉淀 {metadata.memory_writes.filter((w) => w.action === "stored").length} 条
@@ -818,6 +852,9 @@ export default function ChatPanel({
                   {c.is_stale && (
                     <div className="text-amber-600 mt-0.5">陈旧 {c.age_days} 天</div>
                   )}
+                  {c.trust_score != null && (
+                    <div className="text-slate-400 mt-0.5">置信 {c.trust_score.toFixed(2)}</div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -828,7 +865,12 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1 overflow-hidden relative">
+      {writeToast && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs shadow-lg">
+          {writeToast}
+        </div>
+      )}
       {/* Session Sidebar */}
       {showSessions && (
         <div className="w-56 border-r border-slate-200 bg-white flex flex-col flex-shrink-0">

@@ -34,6 +34,16 @@ def boost_on_store(trust: Optional[float]) -> float:
     return clamp_trust(base + STORE_BOOST)
 
 
+def reset_on_user_correction(memory_type: str) -> float:
+    """User manually edited memory — treat as freshly verified."""
+    return initial_trust(memory_type or "user")
+
+
+def penalize_on_user_reject(trust: Optional[float]) -> float:
+    base = trust if trust is not None else DEFAULT_TRUST
+    return clamp_trust(base - 0.2)
+
+
 def decay_for_age(trust: float, age_days: int) -> float:
     if age_days <= 30:
         return trust

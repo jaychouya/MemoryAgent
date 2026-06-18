@@ -13,16 +13,18 @@ async def test_retrieve_filters_by_user_id():
     mem1 = MemoryItem.create(
         memory_type=MemoryType.USER,
         content="用户A喜欢Python",
-        description="用户A的偏好"
+        description="用户A的偏好",
+        metadata={"user_id": "user_a"},
     )
-    mem1.id = "user_a_mem1"  # 文件名：user_a_mem1.md
-    
+    mem1.id = "user_a_mem1"
+
     mem2 = MemoryItem.create(
         memory_type=MemoryType.USER,
         content="用户B喜欢Java",
-        description="用户B的偏好"
+        description="用户B的偏好",
+        metadata={"user_id": "user_b"},
     )
-    mem2.id = "user_b_mem1"  # 文件名：user_b_mem1.md
+    mem2.id = "user_b_mem1"
     
     # 存储记忆
     await storage.store(mem1)
@@ -33,14 +35,14 @@ async def test_retrieve_filters_by_user_id():
     assert len(results_a) >= 1
     # 验证只返回 user_a 的记忆
     for mem in results_a:
-        assert mem.id.startswith("user_a")
+        assert mem.metadata.get("user_id") == "user_a"
     
     # 搜索 user_b 的记忆（文件名以 user_b 开头）
     results_b = await storage.search(user_id="user_b")
     assert len(results_b) >= 1
     # 验证只返回 user_b 的记忆
     for mem in results_b:
-        assert mem.id.startswith("user_b")
+        assert mem.metadata.get("user_id") == "user_b"
 
 
 @pytest.mark.asyncio

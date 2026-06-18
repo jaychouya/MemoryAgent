@@ -101,6 +101,7 @@ async def list_memories(
         memory_type=layer,
         limit=limit,
     )
+    rows = [r for r in rows if not r.get("superseded_by")]
     return [
         {
             "memory_id": row.get("memory_id") or row.get("id", ""),
@@ -123,21 +124,35 @@ async def list_memories(
     ]
 
 
-@router.get("/memory/stats", response_model=MemoryStatsResponse)
-async def get_memory_stats():
-    """Get memory system statistics from actual files."""
-    user_count = count_memories_by_type("user")
-    feedback_count = count_memories_by_type("feedback")
-    project_count = count_memories_by_type("project")
-    reference_count = count_memories_by_type("reference")
-    
-    return MemoryStatsResponse(
-        total=user_count + feedback_count + project_count + reference_count,
-        user=user_count,
-        feedback=feedback_count,
-        project=project_count,
-        reference=reference_count
+@router.get("/memories/archived")
+async def list_archived_memories(
+    user_id: str = Query(..., description="User identifier"),
+    project_id: Optional[str] = Query(None),
+    limit: int = Query(30, ge=1, le=100),
+):
+    """List superseded memories still on disk for audit."""
+    from src.memory.service import get_shared_memory_manager
+
+    manager = get_shared_memory_manager()
+    rows = await manager.list_archived_memories(
+        user_id=user_id,
+        project_id=project_id,
+        limit=limit,
     )
+    return rows
+
+
+@router.get("/memory/stats", response_model=MemoryStatsResponse)
+async def get_memory_stats(
+    user_id: Optional[str] = Query(None, description="Scope stats to one user (active index only)"),
+    project_id: Optional[str] = Query(None),
+):
+    """Active memory counts from search index (excludes superseded/retired)."""
+    from src.memory.service import get_shared_memory_manager
+
+    manager = get_shared_memory_manager()
+    stats = manager.get_active_stats(user_id=user_id, project_id=project_id)
+    return MemoryStatsResponse(**stats)
 
 
 @router.get("/memory/export")

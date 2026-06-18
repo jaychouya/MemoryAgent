@@ -20,6 +20,7 @@ class MemoryCitation:
     source_quote: str = ""
     l0_path: str = ""
     judge_reason: str = ""
+    trust_score: float = 0.55
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -48,6 +49,7 @@ def build_citations(
                 source_quote=item.get("source_quote") or "",
                 l0_path=item.get("l0_path") or "",
                 judge_reason=item.get("judge_reason") or "",
+                trust_score=float(item.get("trust_score") or 0.55),
             )
         )
     return citations

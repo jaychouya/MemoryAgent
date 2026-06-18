@@ -20,7 +20,7 @@ from src.memory.persistent_vector import PersistentVectorStore
 from src.memory.conflicts import find_conflicts
 from src.memory.exclusions import should_exclude, get_exclusion_reason
 from src.memory.embeddings import embed_text
-from src.memory.trust import initial_trust, boost_on_store, boost_on_recall
+from src.memory.trust import initial_trust, boost_on_recall, reset_on_user_correction
 from src.utils.config import settings
 
 SEMANTIC_DEDUP_THRESHOLD = 0.92
@@ -92,12 +92,8 @@ class MemoryManager:
             return None
 
         # Create memory item
-        meta = {
-            "user_id": user_id,
-            "trust_score": initial_trust(memory_type.value),
-            **(metadata or {}),
-        }
-        if "trust_score" not in meta:
+        meta = {"user_id": user_id, **(metadata or {})}
+        if meta.get("trust_score") is None:
             meta["trust_score"] = initial_trust(memory_type.value)
         memory = MemoryItem.create(
             memory_type=memory_type,
@@ -112,14 +108,11 @@ class MemoryManager:
         if success:
             supersedes = memory.metadata.get("supersedes")
             if supersedes:
-                await self.storage.update_metadata(
+                await self._retire_memory(
                     str(supersedes),
-                    {
-                        "superseded_by": memory.id,
-                        "valid_until": datetime.now().isoformat(),
-                    },
+                    memory.id,
+                    conflict_reason="explicit_supersedes",
                 )
-                self.persistent_vectors.delete(str(supersedes))
             elif user_id and auto_supersede:
                 await self._auto_supersede_conflicts(memory, user_id)
             uid = user_id or memory.metadata.get("user_id")
@@ -132,6 +125,23 @@ class MemoryManager:
             )
             return memory
         return None
+
+    async def _retire_memory(
+        self,
+        memory_id: str,
+        superseded_by: str,
+        conflict_reason: str = "auto_conflict",
+    ) -> None:
+        await self.storage.update_metadata(
+            memory_id,
+            {
+                "superseded_by": superseded_by,
+                "valid_until": datetime.now().isoformat(),
+                "conflict_reason": conflict_reason,
+            },
+        )
+        self.storage.index.delete(memory_id)
+        self.persistent_vectors.delete(memory_id)
 
     async def _is_semantic_duplicate(self, content: str, user_id: str) -> bool:
         try:
@@ -189,15 +199,11 @@ class MemoryManager:
             old_id = row.get("memory_id") or row.get("id")
             if not old_id:
                 continue
-            await self.storage.update_metadata(
+            await self._retire_memory(
                 old_id,
-                {
-                    "superseded_by": memory.id,
-                    "valid_until": datetime.now().isoformat(),
-                    "conflict_reason": row.get("conflict_reason", "auto_conflict"),
-                },
+                memory.id,
+                conflict_reason=row.get("conflict_reason", "auto_conflict"),
             )
-            self.persistent_vectors.delete(old_id)
 
     async def resolve_conflict(
         self,
@@ -211,15 +217,11 @@ class MemoryManager:
         owner = item.metadata.get("user_id")
         if user_id and owner and owner != user_id:
             return {"ok": False, "reason": "forbidden"}
-        await self.storage.update_metadata(
+        await self._retire_memory(
             supersede_id,
-            {
-                "superseded_by": keep_id,
-                "valid_until": datetime.now().isoformat(),
-                "conflict_reason": "user_resolved",
-            },
+            keep_id,
+            conflict_reason="user_resolved",
         )
-        self.persistent_vectors.delete(supersede_id)
         return {"ok": True, "superseded": supersede_id, "kept": keep_id}
 
     async def store_resolved_conflict(
@@ -274,6 +276,13 @@ class MemoryManager:
         if ok:
             mem = await self.storage.retrieve(memory_id)
             if mem:
+                await self.storage.update_metadata(
+                    memory_id,
+                    {
+                        "trust_score": reset_on_user_correction(mem.type.value),
+                        "user_corrected_at": datetime.now().isoformat(),
+                    },
+                )
                 self.persistent_vectors.upsert(
                     memory_id=mem.id,
                     content=mem.content,
@@ -282,6 +291,46 @@ class MemoryManager:
                     embedding=embed_text(mem.content),
                 )
         return ok
+
+    async def list_archived_memories(
+        self,
+        user_id: str,
+        project_id: str = None,
+        limit: int = 30,
+    ) -> List[Dict]:
+        out: List[Dict] = []
+        for mt in MemoryType:
+            type_dir = self.storage.base_dir / mt.value
+            if not type_dir.exists():
+                continue
+            for file_path in type_dir.glob("*.md"):
+                try:
+                    raw = file_path.read_text(encoding="utf-8")
+                    item = MemoryItem.from_markdown(raw, file_path.stem)
+                except Exception:
+                    continue
+                uid = item.metadata.get("user_id")
+                if uid != user_id:
+                    continue
+                pid = item.metadata.get("project_id")
+                if project_id and pid and pid != project_id:
+                    continue
+                if not item.metadata.get("superseded_by"):
+                    continue
+                out.append({
+                    "memory_id": item.id,
+                    "content": item.content,
+                    "description": item.description,
+                    "memory_type": item.type.value,
+                    "user_id": uid,
+                    "project_id": pid,
+                    "superseded_by": item.metadata.get("superseded_by"),
+                    "valid_until": item.metadata.get("valid_until"),
+                    "conflict_reason": item.metadata.get("conflict_reason"),
+                    "updated_at": item.updated_at.isoformat() if item.updated_at else "",
+                })
+        out.sort(key=lambda r: r.get("valid_until") or r.get("updated_at") or "", reverse=True)
+        return out[:limit]
 
     async def list_memories(
         self,
@@ -421,6 +470,27 @@ class MemoryManager:
             user_id=user_id
         )
     
+    async def count_memories(
+        self,
+        user_id: str,
+        project_id: str = None,
+    ) -> int:
+        return self.storage.index.count(user_id=user_id, project_id=project_id)
+
+    def get_active_stats(
+        self,
+        user_id: str = None,
+        project_id: str = None,
+    ) -> Dict[str, int]:
+        by_type = self.storage.index.counts_by_type(user_id=user_id, project_id=project_id)
+        return {
+            "total": sum(by_type.values()),
+            "user": by_type.get("user", 0),
+            "feedback": by_type.get("feedback", 0),
+            "project": by_type.get("project", 0),
+            "reference": by_type.get("reference", 0),
+        }
+
     async def get_stats(self) -> Dict[str, int]:
         """Get memory statistics."""
         return await self.storage.get_stats()

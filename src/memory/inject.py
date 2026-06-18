@@ -21,6 +21,7 @@ def _dedupe_by_id(memories: List[Dict]) -> List[Dict]:
 def format_mandatory_memory_block(memories: List[Dict]) -> str:
     if not memories:
         return (
+            f"{AUTHORITY_PREAMBLE}\n\n"
             "【强制记忆注入】本轮未召回任何记忆。\n"
             "禁止引用、猜测或套用用户历史偏好与项目决策；仅依据本轮对话作答。"
         )
