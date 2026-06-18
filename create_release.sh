@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 REPO="jaychouya/MemoryAgent"
 
 echo "Creating GitHub Release v${VERSION}..."
@@ -84,7 +84,7 @@ gh release create "v${VERSION}" \
 
 首次运行需要配置 API Key：
 
-1. 打开 http://localhost:3000
+1. 打开 http://localhost:3000（若端口占用则为 3001）
 2. 点击「配置」按钮
 3. 选择模型厂商并填写 API Key
 
@@ -97,6 +97,7 @@ gh release create "v${VERSION}" \
 - DeepSeek (deepseek-v4)
 - 月之暗面 Kimi (kimi-k2)
 - 更多..." \
+    MemoryAgent-Installer-${VERSION}.dmg \
     MemoryAgent-Installer.dmg \
     MemoryAgent-Windows-${VERSION}.zip
 

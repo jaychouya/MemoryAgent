@@ -1,7 +1,8 @@
 @echo off
 echo Starting MemoryAgent...
 echo.
-echo Access at: http://localhost:3000
+echo Access API: http://localhost:8000
+echo Web UI:    cd frontend ^&^& npm run dev  (http://localhost:3000 or :3001)
 echo.
 echo Press Ctrl+C to stop the server
 echo.

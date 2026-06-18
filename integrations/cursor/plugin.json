@@ -1,7 +1,7 @@
 {
   "name": "memoryagent-sidecar",
   "displayName": "MemoryAgent Memory Sidecar",
-  "version": "0.2.0",
+  "version": "1.0.1",
   "description": "Local editable memory for Cursor via MCP v2",
   "install": {
     "command": "bash scripts/install-sidecar.sh",
