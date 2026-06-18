@@ -29,7 +29,7 @@ pip install -r requirements.txt && cd frontend && npm i && cd .. && make dev
 bash MemoryAgent/scripts/onboard.sh /path/to/your/project
 ```
 
-[接入总览](docs/integrations.md) · [vs Mem0](#为什么不是-mem0) · [Growth playbook](docs/growth-playbook.md)
+[接入总览](docs/integrations.md) · [vs Mem0](#为什么不是-mem0)
 
 </div>
 
