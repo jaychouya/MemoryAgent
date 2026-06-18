@@ -45,6 +45,34 @@ async def sync_integration(integration_id: str):
     }
 
 
+class NotifyIntegrationRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/integrations/{integration_id}/notify")
+async def notify_integration(integration_id: str, body: NotifyIntegrationRequest):
+    manager = get_integration_manager()
+    provider = manager.get_provider(integration_id)
+    if not provider:
+        raise HTTPException(status_code=400, detail="Integration not connected")
+    ok = await provider.send_data({"text": body.message})
+    if not ok:
+        raise HTTPException(status_code=502, detail="Notify failed")
+    return {"status": "sent", "integration_id": integration_id}
+
+
+@router.post("/integrations/{integration_id}/test")
+async def test_integration(integration_id: str):
+    manager = get_integration_manager()
+    provider = manager.get_provider(integration_id)
+    if not provider:
+        raise HTTPException(status_code=400, detail="Integration not connected")
+    ok = await provider.test_connection()
+    if not ok:
+        raise HTTPException(status_code=502, detail="Connection test failed")
+    return {"status": "ok", "integration_id": integration_id}
+
+
 @router.get("/integrations/status")
 async def integrations_status():
     return get_integration_manager().get_sync_status()

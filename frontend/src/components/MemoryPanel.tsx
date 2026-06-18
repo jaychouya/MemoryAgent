@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiFetch, getUserId } from "@/lib/api";
+import { apiFetch, fetchSidecarHealth, fetchSidecarStatus, getUserId, memoryExportUrl, type SidecarHealth, type SidecarStatus } from "@/lib/api";
 
 interface MemoryStats {
   total: number;
@@ -50,14 +50,28 @@ export default function MemoryPanel() {
   const [archivedMemories, setArchivedMemories] = useState<MemoryItem[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [sidecarStatus, setSidecarStatus] = useState<SidecarStatus | null>(null);
+  const [sidecarHealth, setSidecarHealth] = useState<SidecarHealth | null>(null);
+
+  const loadSidecarStatus = async () => {
+    try {
+      setSidecarStatus(await fetchSidecarStatus());
+      setSidecarHealth(await fetchSidecarHealth());
+    } catch {
+      setSidecarStatus(null);
+      setSidecarHealth(null);
+    }
+  };
 
   useEffect(() => {
     loadStats();
     loadMetrics();
     loadMemories();
+    loadSidecarStatus();
     const onWrites = () => {
       loadMemories();
       loadStats();
+      loadSidecarStatus();
     };
     window.addEventListener("memory-agent:writes", onWrites);
     return () => window.removeEventListener("memory-agent:writes", onWrites);
@@ -240,6 +254,48 @@ export default function MemoryPanel() {
 
       {activeTab === "overview" && stats && (
         <>
+          {sidecarHealth?.scope && (
+            <div className="text-[10px] text-slate-500 bg-slate-50 rounded-lg p-2 border border-slate-100">
+              <p>scope: {sidecarHealth.scope.user_id}
+                {sidecarHealth.scope.project_id ? ` / ${sidecarHealth.scope.project_id}` : ""}
+              </p>
+            </div>
+          )}
+          {sidecarHealth?.checks && sidecarHealth.checks.length > 0 && (
+            <div className="rounded-lg border border-slate-200 p-2 space-y-1">
+              <p className="text-[10px] font-medium text-slate-700">记→用→信 检查</p>
+              {sidecarHealth.checks.map((c) => (
+                <div key={c.id} className="flex items-start gap-1.5 text-[10px]">
+                  <span className={c.ok ? "text-green-600" : "text-amber-600"}>
+                    {c.ok ? "✓" : "○"}
+                  </span>
+                  <span className="text-slate-600">
+                    {c.label}
+                    {c.optional ? "（可选）" : ""}
+                  </span>
+                </div>
+              ))}
+              {sidecarHealth.tips?.[0] && (
+                <p className="text-[10px] text-indigo-700 pt-1 border-t border-slate-100 mt-1">
+                  {sidecarHealth.tips[0]}
+                </p>
+              )}
+            </div>
+          )}
+          {sidecarStatus?.ide_notice && (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/80 p-2 text-[10px] text-indigo-900">
+              <p className="font-medium text-indigo-800">侧车状态</p>
+              <p className="mt-0.5">{sidecarStatus.ide_notice}</p>
+              {sidecarStatus.last_recall?.query && (
+                <p className="mt-1 text-indigo-600/80">
+                  最近召回：{sidecarStatus.last_recall.query.slice(0, 40)}
+                  {sidecarStatus.last_recall.count != null
+                    ? ` · ${sidecarStatus.last_recall.count} 条`
+                    : ""}
+                </p>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-slate-50 rounded-lg p-2 text-center">
               <p className="text-lg font-bold text-indigo-600">{stats.total}</p>
@@ -263,10 +319,18 @@ export default function MemoryPanel() {
             ))}
           </div>
           <div className="bg-green-50 rounded-lg p-2 border border-green-100">
-            <p className="text-[10px] font-medium text-green-800">记忆边界</p>
+            <p className="text-[10px] font-medium text-green-800">纠错与导出</p>
             <p className="text-[10px] text-green-700 mt-0.5">
-              优先保存长期偏好、禁忌和项目决策；寒暄、临时状态和可从代码推导的信息会被过滤。
+              对话中说「记错了…」「忘记…」可触发删除；或在「记忆管理」编辑。导出记忆可分享给团队。
             </p>
+            <a
+              href={memoryExportUrl(getUserId(), sidecarHealth?.scope?.project_id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block mt-1.5 text-[10px] text-indigo-700 hover:underline"
+            >
+              导出当前 scope 记忆 (JSON)
+            </a>
           </div>
         </>
       )}

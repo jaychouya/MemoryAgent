@@ -191,6 +191,7 @@ class AgentLoop:
                 "citations": [c.to_dict() for c in citations],
                 "count": len(citations),
                 "health": health,
+                "ide_notice": health.get("ide_notice", ""),
             },
         )
         loop_state = LoopState(

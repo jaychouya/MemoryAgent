@@ -1,6 +1,6 @@
 # MemoryAgent Build Makefile
 
-.PHONY: build build-mac build-win clean run test
+.PHONY: build build-mac build-win clean run dev test install
 
 # Default target
 all: build
@@ -42,6 +42,10 @@ clean:
 run:
 	@echo "Starting MemoryAgent..."
 	python src/main.py
+
+# One-command local dev (backend + frontend)
+dev:
+	@bash scripts/dev.sh
 
 # Run tests
 test:

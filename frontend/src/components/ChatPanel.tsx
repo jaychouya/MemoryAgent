@@ -26,6 +26,8 @@ interface MemoryRecallHealth {
   count: number;
   user_memory_count?: number;
   warnings?: string[];
+  hints?: string[];
+  ide_notice?: string;
   selection_reason?: string;
 }
 
@@ -68,6 +70,7 @@ interface Message {
     memories_used?: string[];
     memory_citations?: MemoryCitation[];
     memory_recall_health?: MemoryRecallHealth;
+    ide_notice?: string;
     memory_writes?: MemoryWrite[];
     stop_reason?: string;
   };
@@ -133,6 +136,7 @@ export default function ChatPanel({
   const lastRequestRef = useRef<Record<string, unknown> | null>(null);
   const lastAssistantIdRef = useRef<string | null>(null);
   const [writeToast, setWriteToast] = useState<string | null>(null);
+  const [memoryWritePending, setMemoryWritePending] = useState(false);
 
   const notifyMemoryWrites = (writes: MemoryWrite[]) => {
     if (!writes.length) return;
@@ -483,6 +487,7 @@ export default function ChatPanel({
       } else if (payload.type === "memory_injected") {
         const cits = (payload.metadata?.citations as MemoryCitation[]) || [];
         const recallHealth = payload.metadata?.health as MemoryRecallHealth | undefined;
+        const ideNotice = (payload.metadata?.ide_notice as string) || recallHealth?.ide_notice;
         memoryCitations = cits;
         memoriesUsed = cits.map((c) => c.content_snippet);
         setMessages((prev) =>
@@ -495,6 +500,7 @@ export default function ChatPanel({
                     memory_citations: cits,
                     memories_used: memoriesUsed,
                     memory_recall_health: recallHealth,
+                    ide_notice: ideNotice,
                   },
                 }
               : m
@@ -513,6 +519,7 @@ export default function ChatPanel({
         const response = payload.metadata?.response;
         emptyReply = Boolean(payload.metadata?.empty_reply);
         recoverable = Boolean(payload.metadata?.recoverable);
+        setMemoryWritePending(true);
         if (typeof response === "string" && response.trim()) {
           if (
             !streamedContent
@@ -568,10 +575,16 @@ export default function ChatPanel({
       } else if (payload.type === "tool_result" && payload.metadata?.tool_name) {
         toolsCalled.push(payload.metadata.tool_name as string);
       } else if (
+        payload.type === "tool_result"
+        && payload.metadata?.phase === "memory_write"
+      ) {
+        setMemoryWritePending(true);
+      } else if (
         (payload.type === "done" || payload.type === "memory_writes")
         && payload.metadata?.memory_writes
       ) {
         memoryWrites = payload.metadata.memory_writes as MemoryWrite[];
+        setMemoryWritePending(false);
       }
       if (payload.type === "memory_writes" && payload.metadata?.pending_conflicts) {
         const conflicts = payload.metadata.pending_conflicts as PendingConflict[];
@@ -743,6 +756,7 @@ export default function ChatPanel({
       if (!willRetry) {
         setIsLoading(false);
         setStreamingMessageId(null);
+        setMemoryWritePending(false);
         abortControllerRef.current = null;
       }
     }
@@ -796,13 +810,36 @@ export default function ChatPanel({
               未命中记忆
             </span>
           )}
-          {metadata.memory_recall_health?.status === "empty_unexpected" && (
+          {metadata.ide_notice && (
             <span
-              className="text-[10px] px-1.5 py-0.5 bg-amber-100 rounded text-amber-800"
-              title={metadata.memory_recall_health.warnings?.join(" ")}
+              className="text-[10px] px-1.5 py-0.5 bg-indigo-50 rounded text-indigo-700 border border-indigo-100"
+              title={metadata.ide_notice}
             >
-              召回异常
+              {metadata.ide_notice.length > 28
+                ? `${metadata.ide_notice.slice(0, 28)}…`
+                : metadata.ide_notice}
             </span>
+          )}
+          {metadata.memory_recall_health &&
+            (metadata.memory_recall_health.status !== "ok" ||
+              (metadata.memory_recall_health.hints?.length ?? 0) > 0) && (
+            <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50/80 p-2 text-[10px] text-amber-900">
+              <div className="font-medium mb-1">
+                {metadata.memory_recall_health.status === "empty_unexpected"
+                  ? "召回异常"
+                  : metadata.memory_recall_health.status === "empty_no_corpus"
+                    ? "尚无长期记忆"
+                    : metadata.memory_recall_health.status === "error"
+                      ? "召回失败"
+                      : "召回提示"}
+              </div>
+              {metadata.memory_recall_health.warnings?.map((w, i) => (
+                <p key={`w-${i}`} className="text-amber-800">{w}</p>
+              ))}
+              {metadata.memory_recall_health.hints?.map((h, i) => (
+                <p key={`h-${i}`} className="text-amber-700">· {h}</p>
+              ))}
+            </div>
           )}
           {metadata.memory_writes?.filter((w) => w.action === "stored").length ? (
             <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 rounded text-emerald-700">
@@ -869,6 +906,12 @@ export default function ChatPanel({
       {writeToast && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs shadow-lg">
           {writeToast}
+        </div>
+      )}
+      {memoryWritePending && (
+        <div className="absolute top-3 right-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/90 text-white text-[10px] shadow">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          正在沉淀记忆…
         </div>
       )}
       {/* Session Sidebar */}

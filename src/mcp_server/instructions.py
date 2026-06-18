@@ -12,12 +12,18 @@ _WORKFLOW = """
 1. 按上文「行动前检查」决定是否需要 `memory_recall`（可省略 `user_id` / `project_id`，服务端从工作区自动推导）。
 2. **回答时**：只引用 recall 结果；标记 `is_stale` 的记忆先核实再当事实。
 3. **回答后**：用户明确偏好/禁忌/项目决策/链接时，调用 `memory_store`（`memory_type`: user | feedback | project | reference）。
-4. 需要整段注入系统提示时：`memory_export` → 使用 `prompt_block` 或 `cursor_rules_block`。
-5. 上下文里出现 `memory_retrieve_blob(ref_id=ccr_…)` 时，用该工具取回完整 tool 输出再分析。
+4. **纠错**：用户说「记错了」「忘记…」→ `memory_delete` / `memory_update`，复述 `ide_notice`。
+5. 需要整段注入系统提示时：`memory_export` → 使用 `prompt_block` 或 `cursor_rules_block`。
+6. 上下文里出现 `memory_retrieve_blob(ref_id=ccr_…)` 时，用该工具取回完整 tool 输出再分析。
+
+### IDE 内可感知
+
+- 工具返回的 **`ide_notice`**：用一行中文告诉用户召回/写入结果。
+- `.memoryagent/status.json` 记录最近一次操作；写入或召回后在回复末尾复述 `ide_notice`。
 """.strip()
 
 _PROMPT_SNIPPET = f"""
-## MemoryAgent 侧车
+## MemoryAgent 侧车（任意 MCP 宿主）
 
 {_GROUND_TRUTH}
 

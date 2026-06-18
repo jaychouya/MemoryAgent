@@ -9,6 +9,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from src.utils.config import settings
 
 PUBLIC_PATHS: Set[str] = {"/health", "/docs", "/openapi.json", "/redoc"}
+PUBLIC_PREFIXES: tuple = ("/api/webhooks/",)
+
+
+def _path_requires_auth(path: str) -> bool:
+    if path in PUBLIC_PATHS:
+        return False
+    if any(path.startswith(p) for p in PUBLIC_PREFIXES):
+        return False
+    return path.startswith("/api/") or path.startswith("/v1/")
 
 
 def _extract_api_key(request: Request) -> Optional[str]:
@@ -34,7 +43,7 @@ def verify_api_key(provided: Optional[str]) -> bool:
 class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if path in PUBLIC_PATHS or not path.startswith("/api"):
+        if not _path_requires_auth(path):
             return await call_next(request)
         if not is_auth_enabled():
             return await call_next(request)

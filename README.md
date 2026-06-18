@@ -1,21 +1,60 @@
-# MemoryAgent — AI Agent 长期记忆系统 | Local Memory for Cursor & Claude Code
+# MemoryAgent — Universal Local Memory for AI Agents
 
 <div align="center">
 
-🧠 **AI Agent 记忆系统 — 让 Cursor / Claude Code / ChatGPT 越用越懂你 | 本地优先 | Obsidian 兼容 | RAG 记忆检索**
+**One memory layer. Any client — IDE, your own app, or built-in chat.**
 
-[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green.svg)](https://fastapi.tiangolo.com/)
-[![Next.js](https://img.shields.io/badge/Next.js-14.1-black.svg)](https://nextjs.org/)
+**一套长期记忆：接 Cursor / 任意 MCP / HTTP API，或直接用自带对话。**
+
+[![GitHub stars](https://img.shields.io/github/stars/jaychouya/MemoryAgent?style=social)](https://github.com/jaychouya/MemoryAgent/stargazers)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-400+-brightgreen.svg)](#测试)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](#mcp-协议支持)
+[![MCP](https://img.shields.io/badge/MCP-Any-Host-purple.svg)](#三种用法)
 
-**每次新会话都要重讲偏好？MemoryAgent 为 AI Coding Agent 提供长期记忆，支持 RAG 检索、向量搜索、记忆老化警告——数据留在本地，隐私可控。**
+### 选一种开始
 
-[核心优势](#核心优势) • [功能亮点](#功能亮点) • [快速开始](#快速开始) • [Cursor 集成](#cursor-集成) • [Claude Code 集成](#claude-code-集成) • [架构设计](#架构设计)
+| 目标 | 命令 |
+|------|------|
+| **独立对话**（自带 Web UI） | `make dev` |
+| **接到 Cursor / Claude / 任意 MCP** | `bash scripts/onboard.sh .` |
+| **接到你自己的软件** | HTTP `localhost:8000/api/*` → [接入总览](docs/integrations.md) |
+
+```bash
+# 独立体验（克隆后）
+git clone https://github.com/jaychouya/MemoryAgent.git && cd MemoryAgent
+pip install -r requirements.txt && cd frontend && npm i && cd .. && make dev
+
+# 或：给现有 IDE Agent 加记忆
+bash MemoryAgent/scripts/onboard.sh /path/to/your/project
+```
+
+[接入总览](docs/integrations.md) · [vs Mem0](#为什么不是-mem0) · [Growth playbook](docs/growth-playbook.md)
 
 </div>
+
+---
+
+## 为什么不是 Mem0？
+
+| 接入 | **MemoryAgent** | **Mem0** | **单 App 内置记忆** |
+|------|-----------------|----------|---------------------|
+| 独立对话 | ✅ Web 控制台 | 部分托管 UI | 仅该 App |
+| IDE / Agent | ✅ 任意 MCP 宿主 | SDK | 通常无 |
+| 自研软件 | ✅ HTTP API | ✅ API | ❌ |
+| 存储 | 本地 Markdown | 向量云为主 | 黑盒 |
+
+> **一句话**：*一套本地 Markdown 记忆，Cursor 能用、你自己的 App 也能用，不想接 API 还能直接打开网页聊。*
+
+---
+
+## 三种用法
+
+详见 **[docs/integrations.md](docs/integrations.md)**。
+
+1. **独立对话** — `make dev`，浏览器里聊天 + 管理记忆（不依赖任何 IDE）
+2. **MCP 侧车** — Cursor / Claude Code / Cline / Windsurf / 任意 MCP 客户端
+3. **HTTP API** — 飞书、钉钉、自研 Agent、脚本调用同一记忆库
 
 ---
 
@@ -54,7 +93,7 @@
 ### 4. 接 Cursor 接近「零配置」
 
 ```bash
-bash /path/to/MemoryAgent/scripts/install-sidecar.sh .
+bash /path/to/MemoryAgent/scripts/onboard.sh .
 ```
 
 自动写入 `.cursor/mcp.json`、规则「每轮先 recall」、`user_id` / `project_id` 由 **工作区 + Git 仓库名** 推导。MCP v2：`recall` / `store` / `update` / `delete` / `list` / `export`。
@@ -113,7 +152,7 @@ MemoryAgent 与以下主流工具无缝集成：
 
 ```bash
 # 一键安装到当前项目
-bash scripts/install-sidecar.sh .
+bash scripts/onboard.sh .
 ```
 
 自动配置：
@@ -254,55 +293,52 @@ tags:
 
 ## 快速开始
 
-### 方式一：一键安装（推荐）
+> 完整矩阵见 **[docs/integrations.md](docs/integrations.md)**。
 
-**macOS:**
+### 用法 A：独立对话（零 IDE 依赖）
+
 ```bash
-# 下载 DMG 安装包
+git clone https://github.com/jaychouya/MemoryAgent.git && cd MemoryAgent
+pip install -r requirements.txt && cd frontend && npm install && cd ..
+make dev
+```
+
+打开 `http://localhost:3000`（或 3001），在「配置」填 API Key → 直接聊。右侧为记忆控制台。
+
+### 用法 B：接到 Cursor / 任意 MCP Agent
+
+```bash
+bash /path/to/MemoryAgent/scripts/onboard.sh /path/to/your/project
+```
+
+重载 IDE 的 MCP → 对话中「记住…」→ 新会话验证。Claude Code 加 `--claude`。
+
+### 用法 C：HTTP 接入你的软件
+
+```bash
+pip install -r requirements.txt
+python -m uvicorn src.backend.main:app --host 0.0.0.0 --port 8000
+```
+
+调用 `POST /api/chat/stream`、`POST /api/memory/recall` 等。见 [integrations.md](docs/integrations.md)。
+
+### 安装包（macOS / Windows）
+
+```bash
 open https://github.com/jaychouya/MemoryAgent/releases
 ```
 
-**Windows:**
-```powershell
-# 下载 ZIP 安装包
-Start-Process "https://github.com/jaychouya/MemoryAgent/releases"
-```
-
-### 方式二：从源码运行
+### 从源码仅启 API
 
 ```bash
-# 克隆仓库
-git clone https://github.com/jaychouya/MemoryAgent.git
-cd MemoryAgent
-
-# 安装后端依赖
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# 安装前端依赖
-cd frontend && npm install && cd ..
-
-# 启动
-python src/main.py
+python -m uvicorn src.backend.main:app --host 0.0.0.0 --port 8000
 ```
-
-如需体验 Web UI，本地启动成功后打开 `http://localhost:3000`，在「配置」里填写模型 API Key。只接入 Cursor / Claude Code 时可跳过 Web UI，直接使用下面的侧车安装方式。
-
-### 方式三：Cursor / Claude Code 侧车（一条命令）
-
-在**你的业务项目**目录执行（将路径换成本仓库位置）：
-
-```bash
-bash /path/to/MemoryAgent/scripts/install-sidecar.sh .
-```
-
-自动写入 `.cursor/mcp.json`、规则「每轮先 `memory_recall` 再回答」、记忆目录 `.memoryagent/memories/`。`user_id` / `project_id` 由工作区与 **Git 仓库名** 自动推导。详见 [Cursor 接入](docs/cursor-integration.md)。
 
 ### 系统要求
 
 - Python 3.11+
-- Node.js 18+
+- Node.js 18+（仅 Web 控制台）
 - 网络连接（用于 API 调用）
 
 ---
@@ -368,6 +404,10 @@ src/
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
+| `POST` | `/v1/chat/completions` | OpenAI 兼容对话（SDK 零改） |
+| `GET` | `/v1/models` | OpenAI 兼容模型列表 |
+| `POST` | `/api/webhooks/feishu` | 飞书入站事件 |
+| `POST` | `/api/webhooks/dingtalk` | 钉钉入站消息 |
 | `POST` | `/api/chat` | 非流式对话 |
 | `POST` | `/api/chat/stream` | SSE 流式对话 |
 | `GET` | `/api/memories` | 列出用户记忆 |

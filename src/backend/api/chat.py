@@ -349,16 +349,45 @@ async def _run_observer(
     pid = project_id if project_id is not None else request.project_id
     try:
         observer = MemoryObserver(_memory_manager)
-        return await observer.observe_turn(
+        outcome = await observer.observe_turn(
             user_message=request.message,
             assistant_message=result.content or "",
             user_id=uid,
             session_id=request.session_id,
             project_id=pid,
         )
+        from src.agent.integration_notify import notify_memory_writes
+
+        await notify_memory_writes(outcome)
+        from src.memory.paths import default_storage_dir
+        from src.memory.sidecar_status import record_writes
+
+        stored_n = len(outcome.stored or [])
+        deleted_n = len(outcome.deleted or [])
+        if stored_n or deleted_n:
+            record_writes(default_storage_dir(), user_id=uid, stored=stored_n, deleted=deleted_n)
+        return outcome
     except Exception as e:
         logger.warning(f"Memory observer failed: {e}")
         return TurnWriteOutcome()
+
+
+async def _emit_write_events(
+    write_outcome: TurnWriteOutcome,
+) -> AsyncGenerator[str, None]:
+    writes = _memory_updates_from_writes(write_outcome)
+    if not writes:
+        return
+    meta: Dict[str, Any] = {
+        "memory_writes": [u.model_dump() for u in writes],
+    }
+    if write_outcome.pending_conflicts:
+        meta["pending_conflicts"] = write_outcome.pending_conflicts
+    yield StreamEvent(
+        type=StreamEventType.MEMORY_WRITES,
+        content="",
+        metadata=meta,
+    ).to_sse()
 
 
 def _schedule_observer(
@@ -450,7 +479,9 @@ async def _execute_chat(request: ChatRequest):
         attachments=[a.model_dump() for a in (request.attachments or [])],
     )
     _persist_session(session_key, request, result)
-    await _await_observer_if_sync(request, result, memory_user_id, project_id)
+    write_outcome = await _run_observer(request, result, memory_user_id, project_id)
+    result.metadata = result.metadata or {}
+    result.metadata["write_outcome"] = write_outcome
     return result
 
 
@@ -458,9 +489,12 @@ async def _execute_chat(request: ChatRequest):
 async def chat(request: ChatRequest):
     try:
         result = await _execute_chat(request)
+        write_outcome = (result.metadata or {}).get("write_outcome")
+        memory_updates = _memory_updates_from_result(result)
+        memory_updates.extend(_memory_updates_from_writes(write_outcome))
         return ChatResponse(
             response=result.content,
-            memory_updates=_memory_updates_from_result(result),
+            memory_updates=memory_updates,
             memory_citations=_citations_from_result(result),
             decision_explanation=DecisionExplanation(
                 action=result.stop_reason.value,
@@ -563,26 +597,17 @@ async def chat_stream(request: ChatRequest):
                 ).to_sse()
             yield done.to_sse()
 
-            from src.utils.config import settings
+            yield StreamEvent(
+                type=StreamEventType.TOOL_RESULT,
+                content="正在沉淀记忆…",
+                metadata={"source": "status", "phase": "memory_write"},
+            ).to_sse()
 
-            if settings.MEMORY_OBSERVER_ASYNC:
-                _schedule_observer(request, result, memory_user_id, project_id)
-            else:
-                write_outcome = await _await_observer_for_chat(
-                    request, result, memory_user_id, project_id
-                )
-                writes = _memory_updates_from_writes(write_outcome)
-                if writes:
-                    meta: Dict[str, Any] = {
-                        "memory_writes": [u.model_dump() for u in writes],
-                    }
-                    if write_outcome.pending_conflicts:
-                        meta["pending_conflicts"] = write_outcome.pending_conflicts
-                    yield StreamEvent(
-                        type=StreamEventType.MEMORY_WRITES,
-                        content="",
-                        metadata=meta,
-                    ).to_sse()
+            write_outcome = await _run_observer(
+                request, result, memory_user_id, project_id
+            )
+            async for ev in _emit_write_events(write_outcome):
+                yield ev
         except Exception as e:
             logger.error(f"Stream chat error: {e}", exc_info=True)
             yield streamer.create_error_event(str(e)).to_sse()

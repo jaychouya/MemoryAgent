@@ -44,6 +44,16 @@ async def recall_for_prompt(
             user_memory_count=user_count,
             selection_reason=reason,
         )
+        from src.memory.sidecar_status import record_recall
+
+        ide_notice = record_recall(
+            memory_manager.storage_dir,
+            user_id=user_id,
+            query=query,
+            count=len(memories),
+            health=health,
+        )
+        health = {**health, "ide_notice": ide_notice}
         ids = [
             m.get("memory_id") or m.get("id")
             for m in memories

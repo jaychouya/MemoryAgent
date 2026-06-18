@@ -40,7 +40,7 @@ _TRANSIENT_UTTERANCE = re.compile(
 )
 
 _FORGET_INTENT = re.compile(
-    r"(忘掉|忘记|删除|移除|清除|不要再记住|别再记住|forget|delete|remove)",
+    r"(忘掉|忘记|删除|移除|清除|不要再记住|别再记住|记错了|记错|更正记忆|forget|delete|remove)",
     re.IGNORECASE,
 )
 

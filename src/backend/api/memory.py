@@ -312,3 +312,18 @@ async def delete_memory_endpoint(
         status = 403 if result.get("reason") == "forbidden" else 404
         raise HTTPException(status_code=status, detail=result.get("reason", "Memory not found"))
     return {"status": "deleted", **result}
+
+
+@router.get("/sidecar/status")
+async def sidecar_status():
+    from src.memory.paths import default_storage_dir
+    from src.memory.sidecar_status import read_status
+
+    return read_status(default_storage_dir())
+
+
+@router.get("/sidecar/health")
+async def sidecar_health():
+    from src.backend.sidecar_health import build_sidecar_health
+
+    return await build_sidecar_health()

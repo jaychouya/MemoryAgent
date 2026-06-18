@@ -53,6 +53,15 @@ async def recall_memories(
         scope=scope,
         recall_health=health,
     )
+    from src.memory.sidecar_status import record_recall
+
+    payload["ide_notice"] = record_recall(
+        storage_dir,
+        user_id=user_id,
+        query=query,
+        count=payload["count"],
+        health=health,
+    )
     log_memory_event("recall", user_id, detail={"query": query, "count": payload["count"]})
     return payload
 
@@ -104,14 +113,36 @@ async def store_memory(
         metadata=meta,
     )
     if item is None:
+        from src.memory.sidecar_status import record_store
+
+        record_store(
+            storage_dir,
+            user_id=validated.user_id,
+            memory_id="",
+            memory_type=mtype.value,
+            content=validated.content,
+            stored=False,
+            reason="excluded_or_failed",
+        )
         return {"stored": False, "reason": "excluded_or_failed"}
     log_memory_event("store", user_id, memory_id=item.id, detail={"type": mtype.value})
+    from src.memory.sidecar_status import record_store
+
+    ide_notice = record_store(
+        storage_dir,
+        user_id=validated.user_id,
+        memory_id=item.id,
+        memory_type=mtype.value,
+        content=item.content,
+        stored=True,
+    )
     return {
         "stored": True,
         "memory_id": item.id,
         "memory_type": item.type.value,
         "project_id": project_id,
         "content": item.content[:200],
+        "ide_notice": ide_notice,
     }
 
 
@@ -131,7 +162,10 @@ async def update_memory(
     ok = await manager.update_memory(memory_id, content=content, description=description)
     if ok:
         log_memory_event("update", user_id, memory_id=memory_id)
-    return {"updated": ok, "memory_id": memory_id}
+    from src.memory.sidecar_status import record_update
+
+    ide_notice = record_update(storage_dir, user_id=user_id, memory_id=memory_id, ok=ok)
+    return {"updated": ok, "memory_id": memory_id, "ide_notice": ide_notice}
 
 
 async def delete_memory(
@@ -148,7 +182,10 @@ async def delete_memory(
     ok = await manager.delete_memory(memory_id)
     if ok:
         log_memory_event("delete", user_id, memory_id=memory_id)
-    return {"deleted": ok, "memory_id": memory_id}
+    from src.memory.sidecar_status import record_delete
+
+    ide_notice = record_delete(storage_dir, user_id=user_id, memory_id=memory_id, ok=ok)
+    return {"deleted": ok, "memory_id": memory_id, "ide_notice": ide_notice}
 
 
 async def list_memories(

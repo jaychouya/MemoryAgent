@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
-from src.backend.api import chat, memory, integrations
+from src.backend.api import chat, memory, integrations, openai_compat, webhooks
 from src.backend.auth import APIKeyMiddleware
 
 # Configure logging
@@ -31,6 +31,8 @@ app.add_middleware(
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(memory.router, prefix="/api", tags=["memory"])
 app.include_router(integrations.router, prefix="/api", tags=["integrations"])
+app.include_router(webhooks.router, prefix="/api", tags=["webhooks"])
+app.include_router(openai_compat.router, prefix="/v1", tags=["openai"])
 
 
 @app.get("/health")
@@ -43,4 +45,11 @@ async def health_check():
         "service": "MemoMind",
         "version": "0.1.0",
         "auth_required": is_auth_enabled(),
+        "api_origin": "http://localhost:8000",
+        "setup": {
+            "dev_command": "bash scripts/dev.sh",
+            "web_ui": "http://localhost:3000 (若占用则用 3001)",
+            "cursor_sidecar": "bash scripts/install-sidecar.sh .",
+            "config_api": "/api/config",
+        },
     }

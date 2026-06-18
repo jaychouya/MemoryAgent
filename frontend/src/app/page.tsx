@@ -12,6 +12,7 @@ export default function Home() {
   const [crossSessionEnabled, setCrossSessionEnabled] = useState(false);
   const [needsConfig, setNeedsConfig] = useState(false);
   const [backendConfigured, setBackendConfigured] = useState(false);
+  const [backendUnreachable, setBackendUnreachable] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("modelConfig");
@@ -67,10 +68,16 @@ export default function Home() {
       }
     };
 
-    fetch(apiUrl("/api/config"))
+    fetch(apiUrl("/health"))
+      .then((r) => {
+        if (!r.ok) throw new Error("health");
+        setBackendUnreachable(false);
+        return fetch(apiUrl("/api/config"));
+      })
       .then((r) => r.json())
       .then(applyBackendConfig)
       .catch(() => {
+        setBackendUnreachable(true);
         if (!hadBackend && !savedCfg?.apiKey) {
           setNeedsConfig(true);
         }
@@ -112,7 +119,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-sm font-bold text-slate-900">MemoryAgent</h1>
-              <p className="text-[10px] text-slate-400">通用助手 · 长期记忆</p>
+              <p className="text-[10px] text-slate-400">独立对话 · MCP · HTTP API</p>
             </div>
           </div>
           
@@ -137,7 +144,15 @@ export default function Home() {
         </div>
       </nav>
 
-      {needsConfig && !backendConfigured && !modelConfig?.apiKey && (
+      {backendUnreachable && (
+        <div className="flex-shrink-0 px-4 py-2 bg-red-50 border-b border-red-100 flex items-center justify-between gap-3">
+          <p className="text-xs text-red-800">
+            无法连接后端（:8000）。请在项目根目录运行 <code className="text-[11px] bg-red-100 px-1 rounded">bash scripts/dev.sh</code>
+          </p>
+        </div>
+      )}
+
+      {needsConfig && !backendConfigured && !modelConfig?.apiKey && !backendUnreachable && (
         <div className="flex-shrink-0 px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between gap-3">
           <p className="text-xs text-amber-800">
             尚未配置模型，点击右上角「配置」填写 API Key 后即可对话。
@@ -190,6 +205,29 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* 接入方式 */}
+          <div className="p-3 border-b border-slate-100">
+            <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">三种用法</h3>
+            <ul className="text-[10px] text-slate-600 space-y-1 px-1">
+              <li>· 本页 = 独立对话</li>
+              <li>· IDE = MCP 侧车</li>
+              <li>· 自研 = HTTP API</li>
+            </ul>
+            <p className="text-[10px] text-indigo-600 mt-1.5 px-1">docs/integrations.md</p>
+          </div>
+
+          {/* Cursor 侧车 */}
+          <div className="p-3 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cursor 侧车</h3>
+            <p className="text-[10px] text-slate-600 leading-relaxed">
+              推荐在业务项目执行：
+              <code className="block mt-1 text-[9px] bg-white border border-slate-200 rounded px-1.5 py-1 break-all">
+                bash scripts/install-sidecar.sh . --verify
+              </code>
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">本页为记忆控制台；日常在 IDE 内使用 MCP。</p>
           </div>
 
           {/* 记忆系统状态 */}

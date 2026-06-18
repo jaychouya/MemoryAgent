@@ -19,6 +19,10 @@ class Settings(BaseSettings):
         default=None,
         description="When set, /api/* requires X-API-Key or Bearer token",
     )
+    MEMORYAGENT_WEBHOOK_INBOUND_TOKEN: Optional[str] = Field(
+        default=None,
+        description="Optional shared secret for /api/webhooks/* (?token=)",
+    )
     MEMORYAGENT_MCP_HTTP_URL: str = Field(
         default="http://127.0.0.1:8000",
         description="Base URL for MCP tools calling HTTP sidecar (optional)",

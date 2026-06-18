@@ -13,6 +13,7 @@ from src.agent.integrations import (
     CalendarIntegration,
     DocumentIntegration,
     CodeIntegration,
+    ChatIntegration,
     get_integration_manager
 )
 
@@ -34,19 +35,19 @@ def test_integration_manager_creates():
 
 
 def test_get_available_integrations(integration_manager):
-    """get_available_integrations 应该返回可用集成列表。"""
+    """get_available_integrations 返回已开放集成的列表。"""
     integrations = integration_manager.get_available_integrations()
     
     assert len(integrations) > 0
     
-    # 检查是否有 Gmail
-    gmail = next(
-        (i for i in integrations if i["id"] == "gmail"),
+    feishu = next(
+        (i for i in integrations if i["id"] == "feishu"),
         None
     )
-    assert gmail is not None
-    assert gmail["name"] == "Gmail"
-    assert gmail["connected"] is False
+    assert feishu is not None
+    assert feishu["name"] == "飞书"
+    assert feishu["connected"] is False
+    assert feishu["available"] is True
 
 
 def test_get_integration(integration_manager):
@@ -66,14 +67,10 @@ def test_connect_integration(integration_manager):
     )
     
     assert result is True
+    assert "gmail" in integration_manager.credentials
     
-    # 检查是否已连接
-    integrations = integration_manager.get_available_integrations()
-    gmail = next(
-        (i for i in integrations if i["id"] == "gmail"),
-        None
-    )
-    assert gmail["connected"] is True
+    provider = integration_manager.get_provider("gmail")
+    assert provider is not None
 
 
 def test_disconnect_integration(integration_manager):
@@ -89,11 +86,8 @@ def test_disconnect_integration(integration_manager):
     
     # 检查是否已断开
     integrations = integration_manager.get_available_integrations()
-    gmail = next(
-        (i for i in integrations if i["id"] == "gmail"),
-        None
-    )
-    assert gmail["connected"] is False
+    assert "gmail" not in [i["id"] for i in integrations]
+    assert "gmail" not in integration_manager.credentials
 
 
 def test_connect_unknown_integration(integration_manager):
@@ -164,15 +158,16 @@ def test_get_sync_status(integration_manager):
 
 
 def test_preset_integrations(integration_manager):
-    """应该有预设集成。"""
-    integrations = integration_manager.get_available_integrations()
-    ids = [i["id"] for i in integrations]
+    """应该有预设集成（含未开放项）。"""
+    all_ids = list(integration_manager.integrations.keys())
+    available = integration_manager.get_available_integrations()
+    avail_ids = [i["id"] for i in available]
     
-    assert "gmail" in ids
-    assert "google_calendar" in ids
-    assert "notion" in ids
-    assert "github" in ids
-    assert "slack" in ids
+    assert "gmail" in all_ids
+    assert "feishu" in avail_ids
+    assert "dingtalk" in avail_ids
+    assert "github" in avail_ids
+    assert "gmail" not in avail_ids
 
 
 def test_email_integration():
@@ -213,6 +208,26 @@ async def test_email_integration_test_connection():
     ))
     result = await provider.test_connection()
     assert result is True
+
+
+def test_chat_integration_provider(integration_manager):
+    integration_manager.connect_integration(
+        integration_id="feishu",
+        credentials={"webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/x"},
+    )
+    provider = integration_manager.get_provider("feishu")
+    assert isinstance(provider, ChatIntegration)
+
+
+def test_restore_providers_on_load():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        manager = IntegrationManager(config_dir=temp_dir)
+        manager.connect_integration(
+            "dingtalk",
+            {"webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=t"},
+        )
+        manager2 = IntegrationManager(config_dir=temp_dir)
+        assert manager2.get_provider("dingtalk") is not None
 
 
 def test_get_integration_manager_singleton():

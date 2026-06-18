@@ -164,3 +164,123 @@ export async function apiFetch(
   const url = path.startsWith("http") ? path : apiUrl(path);
   return fetch(url, { ...init, headers });
 }
+
+export interface IntegrationInfo {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  enabled: boolean;
+  connected: boolean;
+}
+
+export async function listIntegrations(): Promise<IntegrationInfo[]> {
+  const res = await apiFetch("/api/integrations");
+  if (!res.ok) throw new Error("加载集成列表失败");
+  return res.json();
+}
+
+export async function connectIntegration(
+  integrationId: string,
+  credentials: Record<string, string>
+): Promise<void> {
+  const res = await apiFetch("/api/integrations/connect", {
+    method: "POST",
+    body: JSON.stringify({ integration_id: integrationId, credentials }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || "连接失败");
+  }
+}
+
+export async function disconnectIntegration(integrationId: string): Promise<void> {
+  const res = await apiFetch(`/api/integrations/${integrationId}/disconnect`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("断开失败");
+}
+
+export async function testIntegration(integrationId: string): Promise<void> {
+  const res = await apiFetch(`/api/integrations/${integrationId}/test`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || "测试失败");
+  }
+}
+
+export async function notifyIntegration(
+  integrationId: string,
+  message: string
+): Promise<void> {
+  const res = await apiFetch(`/api/integrations/${integrationId}/notify`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail || "发送失败");
+  }
+}
+
+export interface SidecarStatus {
+  ide_notice?: string;
+  updated_at?: string;
+  status_file?: string;
+  last_recall?: {
+    at?: string;
+    query?: string;
+    count?: number;
+    status?: string;
+    hints?: string[];
+  };
+  last_store?: {
+    at?: string;
+    content?: string;
+    stored?: boolean;
+    memory_type?: string;
+  };
+  last_auto_write?: {
+    at?: string;
+    stored?: number;
+    deleted?: number;
+  };
+}
+
+export async function fetchSidecarStatus(): Promise<SidecarStatus> {
+  const res = await apiFetch("/api/sidecar/status");
+  if (!res.ok) return {};
+  return res.json();
+}
+
+export interface SidecarHealthCheck {
+  id: string;
+  ok: boolean;
+  label: string;
+  hint?: string;
+  optional?: boolean;
+}
+
+export interface SidecarHealth {
+  scope?: { user_id?: string; project_id?: string; workspace?: string; storage_dir?: string };
+  memory_count?: number;
+  cursor_ready?: boolean;
+  web_ready?: boolean;
+  checks?: SidecarHealthCheck[];
+  tips?: string[];
+  sidecar_status?: SidecarStatus;
+}
+
+export async function fetchSidecarHealth(): Promise<SidecarHealth> {
+  const res = await apiFetch("/api/sidecar/health");
+  if (!res.ok) return {};
+  return res.json();
+}
+
+export function memoryExportUrl(userId: string, projectId?: string): string {
+  const q = new URLSearchParams({ user_id: userId, limit: "50" });
+  if (projectId) q.set("project_id", projectId);
+  return apiUrl(`/api/memory/export?${q.toString()}`);
+}

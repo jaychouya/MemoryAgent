@@ -5,10 +5,12 @@
 在 **你的项目目录** 执行（`MemoryAgent` 为本仓库绝对路径）：
 
 ```bash
-bash /path/to/MemoryAgent/scripts/install-sidecar.sh .
+bash /path/to/MemoryAgent/scripts/install-sidecar.sh . --verify
 # Claude Code 同时写 .mcp.json：
-bash /path/to/MemoryAgent/scripts/install-sidecar.sh . --claude
+bash /path/to/MemoryAgent/scripts/install-sidecar.sh . --claude --verify
 ```
+
+`--verify` 会跑 30 秒首胜测试（写入 → 召回）。失败时按终端提示检查 MCP 重载与 Python 依赖。
 
 自动完成：
 
@@ -17,8 +19,15 @@ bash /path/to/MemoryAgent/scripts/install-sidecar.sh . --claude
 | `.cursor/mcp.json` | Cursor 项目级 MCP，无需手抄 example |
 | `.cursor/rules/memory-sidecar.mdc` | 侧车 prompt：权威层级 + 行动前检查（每轮最多 recall 一次） |
 | `.memoryagent/memories/` | 记忆落在当前仓库，可 Git 忽略 |
+| `.memoryagent/status.json` | 最近一次 recall/store 的 `ide_notice` 人话摘要 |
+| `.memoryagent/README.md` | 项目内快速说明 |
 
 安装后：**重载 Cursor MCP** 或重启 IDE。
+
+## IDE 内可感知
+
+- MCP 工具返回 **`ide_notice`**（如「✓ 已召回 3 条记忆」）— Agent 应在回复末尾复述一行。
+- 打开 **`.memoryagent/status.json`** 可审计最近操作（与 Web 控制台 `/api/sidecar/status` 同源）。
 
 ## 自动推导（不用手填 user_id）
 

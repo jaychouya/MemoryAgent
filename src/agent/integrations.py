@@ -39,6 +39,7 @@ class IntegrationConfig:
     base_url: str
     description: str = ""
     enabled: bool = True
+    available: bool = True
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -205,6 +206,52 @@ class DocumentIntegration(IntegrationProvider):
         return await self.fetch_data(query={"search": query}, limit=limit)
 
 
+class ChatIntegration(IntegrationProvider):
+    """Feishu / DingTalk / Slack webhook bots."""
+
+    async def test_connection(self) -> bool:
+        if not await super().test_connection():
+            return False
+        creds = self.credentials.credentials if self.credentials else {}
+        webhook_url = (creds.get("webhook_url") or "").strip()
+        if not webhook_url.startswith("http"):
+            return False
+        try:
+            await self.send_data({"text": "MemoryAgent 连接测试"})
+            return True
+        except Exception as e:
+            logger.warning("[%s] connection test failed: %s", self.config.integration_id, e)
+            return False
+
+    async def send_data(self, data: Dict[str, Any]) -> bool:
+        if not self.credentials:
+            return False
+        creds = self.credentials.credentials
+        webhook_url = (creds.get("webhook_url") or "").strip()
+        secret = (creds.get("secret") or "").strip() or None
+        text = str(data.get("text") or data.get("message") or "").strip()
+        if not webhook_url or not text:
+            return False
+
+        from src.agent.chat_webhooks import send_dingtalk, send_feishu
+
+        if self.config.integration_id == "feishu":
+            await send_feishu(webhook_url, text, secret)
+        elif self.config.integration_id == "dingtalk":
+            await send_dingtalk(webhook_url, text, secret)
+        else:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    webhook_url,
+                    json={"text": text},
+                    headers=self._auth_headers(),
+                )
+                resp.raise_for_status()
+        return True
+
+
 class CodeIntegration(IntegrationProvider):
     """Code integration (GitHub, GitLab, etc.)."""
 
@@ -278,7 +325,8 @@ class IntegrationManager:
             integration_type=IntegrationType.EMAIL,
             auth_type=AuthType.OAUTH2,
             base_url="https://gmail.googleapis.com/gmail/v1",
-            description="Google 邮件服务"
+            description="Google 邮件服务（即将支持）",
+            available=False,
         ),
         "google_calendar": IntegrationConfig(
             integration_id="google_calendar",
@@ -286,7 +334,8 @@ class IntegrationManager:
             integration_type=IntegrationType.CALENDAR,
             auth_type=AuthType.OAUTH2,
             base_url="https://www.googleapis.com/calendar/v3",
-            description="Google 日历服务"
+            description="Google 日历服务（即将支持）",
+            available=False,
         ),
         "notion": IntegrationConfig(
             integration_id="notion",
@@ -294,7 +343,8 @@ class IntegrationManager:
             integration_type=IntegrationType.DOCUMENT,
             auth_type=AuthType.TOKEN,
             base_url="https://api.notion.com/v1",
-            description="Notion 文档和数据库"
+            description="Notion 文档和数据库（即将支持）",
+            available=False,
         ),
         "github": IntegrationConfig(
             integration_id="github",
@@ -310,8 +360,25 @@ class IntegrationManager:
             integration_type=IntegrationType.CHAT,
             auth_type=AuthType.OAUTH2,
             base_url="https://slack.com/api",
-            description="Slack 团队沟通平台"
-        )
+            description="Slack 团队沟通平台（即将支持）",
+            available=False,
+        ),
+        "feishu": IntegrationConfig(
+            integration_id="feishu",
+            name="飞书",
+            integration_type=IntegrationType.CHAT,
+            auth_type=AuthType.TOKEN,
+            base_url="https://open.feishu.cn",
+            description="飞书群机器人：出站通知 + 入站事件回调"
+        ),
+        "dingtalk": IntegrationConfig(
+            integration_id="dingtalk",
+            name="钉钉",
+            integration_type=IntegrationType.CHAT,
+            auth_type=AuthType.TOKEN,
+            base_url="https://oapi.dingtalk.com",
+            description="钉钉群机器人：出站通知 + 入站消息回调"
+        ),
     }
     
     def __init__(self, config_dir: str = ".memoryai/integrations"):
@@ -340,6 +407,7 @@ class IntegrationManager:
                         credentials=creds.get("credentials", {}),
                         expires_at=datetime.fromisoformat(creds["expires_at"]) if creds.get("expires_at") else None
                     )
+                self._restore_providers()
             except Exception as e:
                 logger.error(f"Failed to load credentials: {e}")
     
@@ -353,6 +421,16 @@ class IntegrationManager:
                 "expires_at": creds.expires_at.isoformat() if creds.expires_at else None
             }
         creds_file.write_text(json.dumps(data, indent=2))
+
+    def _restore_providers(self):
+        for integration_id, creds in self.credentials.items():
+            config = self.integrations.get(integration_id)
+            if not config:
+                continue
+            provider = self._create_provider(config)
+            if provider:
+                provider.set_credentials(creds)
+                self.providers[integration_id] = provider
     
     def get_available_integrations(self) -> List[Dict[str, Any]]:
         """Get list of available integrations."""
@@ -363,9 +441,11 @@ class IntegrationManager:
                 "type": config.integration_type.value,
                 "description": config.description,
                 "enabled": config.enabled,
+                "available": config.available,
                 "connected": config.integration_id in self.credentials
             }
             for config in self.integrations.values()
+            if config.available
         ]
     
     def get_integration(self, integration_id: str) -> Optional[IntegrationConfig]:
@@ -422,6 +502,7 @@ class IntegrationManager:
             IntegrationType.CALENDAR: CalendarIntegration,
             IntegrationType.DOCUMENT: DocumentIntegration,
             IntegrationType.CODE: CodeIntegration,
+            IntegrationType.CHAT: ChatIntegration,
         }
         
         provider_class = provider_map.get(config.integration_type)
