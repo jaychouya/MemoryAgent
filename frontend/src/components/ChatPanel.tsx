@@ -127,7 +127,10 @@ export default function ChatPanel({
   const [currentSessionId, setCurrentSessionId] = useState("default");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showSessions, setShowSessions] = useState(false);
-  const [showMetadata, setShowMetadata] = useState(true);
+  const [chatTier, setChatTier] = useState<ChatTier>(() => {
+    if (typeof window === "undefined") return "balanced";
+    return (localStorage.getItem("chatTier") as ChatTier) || "balanced";
+  });
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [backendConfigured, setBackendConfigured] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -139,25 +142,14 @@ export default function ChatPanel({
   const lastAssistantIdRef = useRef<string | null>(null);
   const [writeToast, setWriteToast] = useState<string | null>(null);
   const [memoryWritePending, setMemoryWritePending] = useState(false);
-  const [chatTier, setChatTier] = useState<ChatTier>(() => {
-    if (typeof window === "undefined") return "balanced";
-    return (localStorage.getItem("chatTier") as ChatTier) || "balanced";
-  });
-  const [customModel, setCustomModel] = useState<string>("");
-
-  const providerModels =
-    PROVIDERS.find((p) => p.id === modelConfig?.providerId)?.models || [];
-  const baseModel = modelConfig?.model || "";
-  const tierModel = resolveTierModel(baseModel, providerModels, chatTier);
-  const activeModelLabel = customModel || tierModel || baseModel || "未配置模型";
 
   const notifyMemoryWrites = (writes: MemoryWrite[]) => {
     if (!writes.length) return;
     const stored = writes.filter((w) => w.action === "stored").length;
     const deleted = writes.filter((w) => w.action === "deleted").length;
     const parts: string[] = [];
-    if (stored > 0) parts.push(`已沉淀 ${stored} 条记忆`);
-    if (deleted > 0) parts.push(`已删除 ${deleted} 条记忆`);
+    if (stored > 0) parts.push(`已记住 ${stored} 条`);
+    if (deleted > 0) parts.push(`已删除 ${deleted} 条`);
     if (!parts.length) return;
     setWriteToast(parts.join("，"));
     window.setTimeout(() => setWriteToast(null), 4000);
@@ -410,8 +402,7 @@ export default function ChatPanel({
       PROVIDERS.find((p) => p.id === modelConfig?.providerId)?.models || [];
     const baseModel = activeConfig?.model || modelConfig?.model || "";
     const tierModel = resolveTierModel(baseModel, providerModels, chatTier);
-    const modelOverride =
-      customModel || (chatTier !== "balanced" ? tierModel : undefined);
+    const modelOverride = chatTier !== "balanced" ? tierModel : undefined;
 
     const streamTimeout = window.setTimeout(() => abortController.abort(), 120_000);
     const requestBody = isRetry && lastRequestRef.current
@@ -798,130 +789,7 @@ export default function ChatPanel({
     }
   };
 
-  const renderMetadata = (metadata: NonNullable<Message["metadata"]>) => {
-    if (!showMetadata) return null;
-
-    return (
-      <div className="mt-2 pt-2 border-t border-slate-200/50">
-        <div className="flex flex-wrap gap-1.5">
-          {metadata.stop_reason && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 rounded text-slate-600">
-              {metadata.stop_reason}
-            </span>
-          )}
-          {metadata.turns && metadata.turns > 1 && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 rounded text-blue-700">
-              {metadata.turns} 轮对话
-            </span>
-          )}
-          {metadata.tools_called && metadata.tools_called.length > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-green-100 rounded text-green-700">
-              使用工具: {metadata.tools_called.join(", ")}
-            </span>
-          )}
-          {metadata.memory_citations && metadata.memory_citations.length > 0 ? (
-            <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 rounded text-purple-700">
-              使用 {metadata.memory_citations.length} 条记忆
-            </span>
-          ) : metadata.memories_used && metadata.memories_used.length > 0 ? (
-            <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 rounded text-purple-700">
-              使用 {metadata.memories_used.length} 条记忆
-            </span>
-          ) : (
-            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-500">
-              未命中记忆
-            </span>
-          )}
-          {metadata.ide_notice && (
-            <span
-              className="text-[10px] px-1.5 py-0.5 bg-indigo-50 rounded text-indigo-700 border border-indigo-100"
-              title={metadata.ide_notice}
-            >
-              {metadata.ide_notice.length > 28
-                ? `${metadata.ide_notice.slice(0, 28)}…`
-                : metadata.ide_notice}
-            </span>
-          )}
-          {metadata.memory_recall_health &&
-            (metadata.memory_recall_health.status !== "ok" ||
-              (metadata.memory_recall_health.hints?.length ?? 0) > 0) && (
-            <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50/80 p-2 text-[10px] text-amber-900">
-              <div className="font-medium mb-1">
-                {metadata.memory_recall_health.status === "empty_unexpected"
-                  ? "召回异常"
-                  : metadata.memory_recall_health.status === "empty_no_corpus"
-                    ? "尚无长期记忆"
-                    : metadata.memory_recall_health.status === "error"
-                      ? "召回失败"
-                      : "召回提示"}
-              </div>
-              {metadata.memory_recall_health.warnings?.map((w, i) => (
-                <p key={`w-${i}`} className="text-amber-800">{w}</p>
-              ))}
-              {metadata.memory_recall_health.hints?.map((h, i) => (
-                <p key={`h-${i}`} className="text-amber-700">· {h}</p>
-              ))}
-            </div>
-          )}
-          {metadata.memory_writes?.filter((w) => w.action === "stored").length ? (
-            <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 rounded text-emerald-700">
-              沉淀 {metadata.memory_writes.filter((w) => w.action === "stored").length} 条
-            </span>
-          ) : null}
-          {metadata.memory_writes?.filter((w) => w.action === "deleted").length ? (
-            <span className="text-[10px] px-1.5 py-0.5 bg-rose-100 rounded text-rose-700">
-              删除 {metadata.memory_writes.filter((w) => w.action === "deleted").length} 条
-            </span>
-          ) : null}
-        </div>
-        {metadata.memory_writes && metadata.memory_writes.length > 0 && (
-          <details className="mt-2 text-[10px] text-slate-600">
-            <summary className="cursor-pointer text-emerald-700 font-medium">
-              查看记忆变更
-            </summary>
-            <ul className="mt-1 space-y-1 pl-1">
-              {metadata.memory_writes.map((w, i) => (
-                <li key={`${w.action}-${i}`} className="line-clamp-2">
-                  {w.action === "deleted" ? "删除" : "沉淀"}: {w.content}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-        {metadata.memory_citations && metadata.memory_citations.length > 0 && (
-          <details className="mt-2 text-[10px] text-slate-600">
-            <summary className="cursor-pointer text-purple-700 font-medium">
-              查看记忆引用
-            </summary>
-            <ul className="mt-1 space-y-1.5 pl-1">
-              {metadata.memory_citations.map((c) => (
-                <li key={c.memory_id} className="bg-purple-50 rounded p-1.5 border border-purple-100">
-                  <div className="flex justify-between gap-1">
-                    <span className="font-medium">{c.description || c.memory_id}</span>
-                    <span className="text-slate-400">{c.score.toFixed(2)}</span>
-                  </div>
-                  <div className="text-slate-500">{c.memory_type} · {c.selection_reason}</div>
-                  <div className="mt-0.5 line-clamp-2">{c.content_snippet}</div>
-                  {c.source_quote && (
-                    <div className="text-slate-500 mt-0.5">原话: {c.source_quote}</div>
-                  )}
-                  {c.judge_reason && (
-                    <div className="text-slate-400 mt-0.5">裁判: {c.judge_reason}</div>
-                  )}
-                  {c.is_stale && (
-                    <div className="text-amber-600 mt-0.5">陈旧 {c.age_days} 天</div>
-                  )}
-                  {c.trust_score != null && (
-                    <div className="text-slate-400 mt-0.5">置信 {c.trust_score.toFixed(2)}</div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </div>
-    );
-  };
+  const renderMetadata = () => null;
 
   return (
     <div className="flex flex-1 overflow-hidden relative">
@@ -930,12 +798,7 @@ export default function ChatPanel({
           {writeToast}
         </div>
       )}
-      {memoryWritePending && (
-        <div className="absolute top-3 right-4 z-40 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/90 text-white text-[10px] shadow">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          正在沉淀记忆…
-        </div>
-      )}
+      {memoryWritePending && null}
       {/* Session Sidebar */}
       {showSessions && (
         <div className="w-56 border-r border-slate-200 bg-white flex flex-col flex-shrink-0">
@@ -1007,41 +870,31 @@ export default function ChatPanel({
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col bg-white">
         {/* Header */}
-        <div className="px-4 py-2 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => setShowSessions(!showSessions)}
-              className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center transition-colors"
+              className="w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center"
+              aria-label="会话"
             >
               <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
               </svg>
             </button>
-            <h2 className="text-sm font-semibold text-slate-800">智能对话</h2>
-            <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{currentSessionId}</span>
-          </div>
-          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={createNewSession}
+              className="text-xs text-indigo-600 hover:text-indigo-700"
+            >
+              新对话
+            </button>
+            <div className="flex-1" />
             <button
               onClick={clearCurrentChat}
-              className="text-[10px] px-2 py-1 rounded transition-colors bg-slate-100 text-slate-500 hover:bg-red-100 hover:text-red-600"
-              title="清空聊天记录"
+              className="text-xs text-slate-400 hover:text-red-500"
             >
               清空
             </button>
-            <button
-              onClick={() => setShowMetadata(!showMetadata)}
-              className={`text-[10px] px-2 py-1 rounded transition-colors ${
-                showMetadata 
-                  ? "bg-indigo-100 text-indigo-700" 
-                  : "bg-slate-100 text-slate-500"
-              }`}
-            >
-              {showMetadata ? "隐藏元数据" : "显示元数据"}
-            </button>
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-            <span className="text-[10px] text-slate-400">在线</span>
           </div>
-        </div>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
@@ -1052,8 +905,7 @@ export default function ChatPanel({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                 </svg>
               </div>
-              <p className="text-xs font-medium text-slate-500">开始对话</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">输入需要长期记住的项目信息或规则，发送后可在左侧查看沉淀结果。</p>
+              <p className="text-sm text-slate-400">有什么想聊的？</p>
             </div>
           )}
           
@@ -1069,26 +921,6 @@ export default function ChatPanel({
                     : "bg-slate-100 text-slate-800 rounded-bl-sm"
                 }`}
               >
-                {message.role === "assistant" && message.metadata?.memory_citations && (
-                  <div className="mb-2 text-[10px] rounded-lg border border-purple-100 bg-purple-50 p-2 text-purple-800">
-                    {message.metadata.memory_citations.length > 0 ? (
-                      <>
-                        <div className="font-medium mb-1">
-                          本轮注入 {message.metadata.memory_citations.length} 条记忆
-                        </div>
-                        <ul className="space-y-0.5 text-purple-700">
-                          {message.metadata.memory_citations.map((c) => (
-                            <li key={c.memory_id} className="line-clamp-2">
-                              · [{c.memory_type}] {c.content_snippet}
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <span className="text-slate-500">本轮未命中记忆</span>
-                    )}
-                  </div>
-                )}
                 {message.role === "assistant" ? (
                   <MarkdownMessage content={message.content} />
                 ) : (
@@ -1117,7 +949,7 @@ export default function ChatPanel({
                 <p className={`text-[10px] mt-1 ${message.role === "user" ? "text-indigo-200" : "text-slate-400"}`}>
                   {message.timestamp.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
                 </p>
-                {message.metadata && renderMetadata(message.metadata)}
+                {message.metadata && renderMetadata()}
               </div>
             </div>
           ))}
@@ -1185,48 +1017,27 @@ export default function ChatPanel({
               e.target.value = "";
             }}
           />
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            {CHAT_TIERS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => {
-                  setChatTier(t.id);
-                  localStorage.setItem("chatTier", t.id);
-                  if (t.id === "balanced") setCustomModel("");
-                }}
-                disabled={isLoading}
-                title={t.hint}
-                className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
-                  chatTier === t.id
-                    ? "bg-indigo-600 text-white border-indigo-600"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-            {providerModels.length > 0 && (
-              <select
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                disabled={isLoading}
-                className="text-[11px] px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 max-w-[140px]"
-                title="指定模型"
-              >
-                <option value="">按档位自动</option>
-                {providerModels.map((m) => (
-                  <option key={m} value={m}>
-                    {m.length > 22 ? `${m.slice(0, 20)}…` : m}
-                  </option>
-                ))}
-              </select>
-            )}
-            <span className="text-[10px] text-slate-400 ml-auto truncate max-w-[120px]">
-              {activeModelLabel}
-            </span>
-          </div>
           <div className="flex gap-2 items-end">
+            <div className="hidden sm:flex items-center gap-1 flex-shrink-0 pb-1">
+              {CHAT_TIERS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    setChatTier(t.id);
+                    localStorage.setItem("chatTier", t.id);
+                  }}
+                  disabled={isLoading}
+                  className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    chatTier === t.id
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "text-slate-400 hover:text-slate-600"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
             <div className="flex flex-col gap-1 flex-shrink-0">
               <button
                 type="button"

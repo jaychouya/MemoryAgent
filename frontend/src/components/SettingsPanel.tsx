@@ -138,6 +138,8 @@ interface SettingsPanelProps {
   onSave: (config: ModelConfig) => Promise<boolean>;
   currentConfig?: ModelConfig;
   backendConfigured?: boolean;
+  crossSessionEnabled?: boolean;
+  onCrossSessionChange?: (enabled: boolean) => void;
 }
 
 export interface ModelConfig {
@@ -154,6 +156,8 @@ export default function SettingsPanel({
   onSave,
   currentConfig,
   backendConfigured = false,
+  crossSessionEnabled = false,
+  onCrossSessionChange,
 }: SettingsPanelProps) {
   const [tab, setTab] = useState<"model" | "integrations">("model");
   const [selectedProvider, setSelectedProvider] = useState<string>(
@@ -234,7 +238,7 @@ export default function SettingsPanel({
                 tab === "integrations" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
               }`}
             >
-              飞书 / 钉钉
+              通知
             </button>
           </div>
         </div>
@@ -316,51 +320,36 @@ export default function SettingsPanel({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              记忆模型
-            </label>
-            <select
-              value={memoryModel}
-              onChange={(e) => setMemoryModel(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-            >
-              <option value="auto">自动（轻量，用于沉淀/召回）</option>
-              {provider?.models.map((m) => (
-                <option key={`mem-${m}`} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-400 mt-1">
-              对话与记忆可分工：记忆提取默认用更轻的模型省成本
-            </p>
-          </div>
-
-          {/* Info */}
-          <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-            <div className="flex gap-3">
-              <svg className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          <details className="group">
+            <summary className="text-sm text-slate-500 cursor-pointer">高级选项</summary>
+            <div className="mt-3 space-y-3">
               <div>
-                <p className="text-sm text-blue-700 font-medium">配置说明</p>
-                <p className="text-xs text-blue-600 mt-1">
-                  选择厂商后，API地址和模型会自动填入。你只需要填写 API Key 即可开始使用。
-                </p>
-                {selectedProvider === "anthropic" && (
-                  <p className="text-xs text-amber-600 mt-1 font-medium">
-                    ⚠️ Anthropic Claude 使用专用API格式，需要通过 OpenRouter 等兼容服务接入
-                  </p>
-                )}
-                {selectedProvider === "google" && (
-                  <p className="text-xs text-amber-600 mt-1 font-medium">
-                    ⚠️ Google Gemini 使用专用API格式，需要通过 OpenRouter 等兼容服务接入
-                  </p>
-                )}
+                <label className="block text-sm font-medium text-slate-700 mb-2">记忆模型</label>
+                <select
+                  value={memoryModel}
+                  onChange={(e) => setMemoryModel(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                >
+                  <option value="auto">自动（推荐）</option>
+                  {provider?.models.map((m) => (
+                    <option key={`mem-${m}`} value={m}>{m}</option>
+                  ))}
+                </select>
               </div>
+              {onCrossSessionChange && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-700">跨会话共享记忆</span>
+                  <button
+                    type="button"
+                    onClick={() => onCrossSessionChange(!crossSessionEnabled)}
+                    className={`relative w-10 h-5 rounded-full ${crossSessionEnabled ? "bg-indigo-600" : "bg-slate-300"}`}
+                  >
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${crossSessionEnabled ? "translate-x-5" : ""}`} />
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
+          </details>
           </>
           )}
         </div>
@@ -380,7 +369,7 @@ export default function SettingsPanel({
             disabled={(!apiKey.trim() && !backendConfigured) || saving}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
           >
-            {saving ? "保存中…" : "保存配置"}
+            {saving ? "保存中…" : "保存"}
           </button>
         </div>
         )}
