@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from typing import List, Dict, Any, Optional, AsyncGenerator
 import logging
 import json
@@ -87,6 +87,7 @@ class ModelConfigRequest(BaseModel):
     api_key: str
     base_url: str
     model: str
+    memory_model: Optional[str] = Field(default=None, description="Light model for memory extract/rerank; auto if empty")
 
 
 class AttachmentItem(BaseModel):
@@ -96,12 +97,16 @@ class AttachmentItem(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     message: str = Field(default="", max_length=10000)
     session_id: str = Field(default="default")
     user_id: str = Field(default="anonymous")
     project_id: Optional[str] = Field(default=None, description="Repo/project scope for memories")
     cross_session_memory: bool = Field(default=False)
     llm_config: Optional[ModelConfigRequest] = None
+    model_override: Optional[str] = Field(default=None, max_length=128)
+    chat_tier: Optional[str] = Field(default=None, description="fast|balanced|deep")
     attachments: Optional[List[AttachmentItem]] = None
 
     @model_validator(mode="after")
@@ -166,13 +171,14 @@ def _llm_not_ready_message(request: ChatRequest, llm: LLMService) -> Optional[st
     )
 
 
-def get_agent_loop(llm_service) -> AgentLoop:
+def get_agent_loop(chat_llm: LLMService, memory_llm: Optional[LLMService] = None) -> AgentLoop:
     global _agent_loop, _plan_manager, _memory_manager, _skill_graph, _tracer, _tool_registry
+    mem_llm = memory_llm or chat_llm
     if _agent_loop is None:
         # 重置工具注册表，避免重复注册
         _tool_registry = ToolRegistry()
         
-        _memory_manager = get_shared_memory_manager(llm_service=llm_service)
+        _memory_manager = get_shared_memory_manager(llm_service=mem_llm)
         _skill_graph = SkillGraph()
         _tracer = ExecutionTracer()
         
@@ -192,33 +198,81 @@ def get_agent_loop(llm_service) -> AgentLoop:
         _tool_registry.register(CreatePlanTool(_plan_manager))
         
         _agent_loop = AgentLoop(
-            llm_service=llm_service,
+            llm_service=chat_llm,
             tool_registry=_tool_registry,
             memory_manager=_memory_manager,
             max_turns=10
         )
-    elif _llm_fingerprint(_agent_loop.llm) != _llm_fingerprint(llm_service):
-        _agent_loop.llm = llm_service
-        if _memory_manager:
-            _memory_manager.llm = llm_service
-            _memory_manager.retrieval.llm = llm_service
+    else:
+        if _memory_manager and _llm_fingerprint(_memory_manager.llm) != _llm_fingerprint(mem_llm):
+            _memory_manager.llm = mem_llm
+            _memory_manager.retrieval.llm = mem_llm
+        if _llm_fingerprint(_agent_loop.llm) != _llm_fingerprint(chat_llm):
+            _agent_loop.llm = chat_llm
     return _agent_loop
+
+
+def _base_config_dict() -> Dict[str, str]:
+    _apply_persisted_model_config()
+    if global_model_config:
+        return dict(global_model_config)
+    cfg = config_manager.load_config()
+    return dict(cfg) if cfg else {}
+
+
+def _resolve_chat_model_name(request: ChatRequest, base_model: str) -> str:
+    from src.backend.model_routing import pick_model_for_tier
+
+    if request.model_override and request.model_override.strip():
+        return request.model_override.strip()
+    if request.chat_tier:
+        return pick_model_for_tier(base_model, request.chat_tier.strip().lower())
+    if request.llm_config and (request.llm_config.model or "").strip():
+        return request.llm_config.model.strip()
+    return base_model
+
+
+def _resolve_memory_llm(chat_llm: LLMService) -> LLMService:
+    from src.backend.model_routing import pick_memory_model
+
+    cfg = _base_config_dict()
+    if not cfg.get("api_key"):
+        return chat_llm
+    memory_model = (cfg.get("memory_model") or "").strip()
+    if memory_model and memory_model.lower() not in ("auto", "same"):
+        return LLMService(
+            api_key=cfg["api_key"],
+            model=memory_model,
+            base_url=cfg.get("base_url", ""),
+        )
+    lite = pick_memory_model(cfg.get("model") or chat_llm.model or "")
+    if lite == (cfg.get("model") or chat_llm.model):
+        return chat_llm
+    return LLMService(
+        api_key=cfg["api_key"],
+        model=lite,
+        base_url=cfg.get("base_url", ""),
+    )
 
 
 def _resolve_llm(request: ChatRequest) -> LLMService:
     _apply_persisted_model_config()
+    base = _base_config_dict()
     if request.llm_config and is_usable_api_key(request.llm_config.api_key):
-        fallback = global_model_config or {}
+        fallback = base or {}
+        base_model = (request.llm_config.model or "").strip() or fallback.get("model", "gpt-4o-mini")
+        chat_model = _resolve_chat_model_name(request, base_model)
         return LLMService(
             api_key=request.llm_config.api_key.strip(),
-            model=(request.llm_config.model or "").strip() or fallback.get("model", "gpt-4o-mini"),
+            model=chat_model,
             base_url=(request.llm_config.base_url or "").strip() or fallback.get("base_url", ""),
         )
-    if global_model_config and is_usable_api_key(global_model_config.get("api_key")):
+    if base and is_usable_api_key(base.get("api_key")):
+        chat_model = _resolve_chat_model_name(request, base.get("model", "gpt-4"))
         return LLMService(
-            api_key=global_model_config["api_key"],
-            model=global_model_config["model"],
-            base_url=global_model_config["base_url"],
+            api_key=base["api_key"],
+            model=chat_model,
+            base_url=base.get("base_url", ""),
         )
     return get_llm_service()
 
@@ -469,7 +523,8 @@ async def _execute_chat(request: ChatRequest):
     not_ready = _llm_not_ready_message(request, llm)
     if not_ready:
         raise HTTPException(status_code=400, detail=not_ready)
-    agent = get_agent_loop(llm)
+    memory_llm = _resolve_memory_llm(llm)
+    agent = get_agent_loop(llm, memory_llm)
     result = await agent.run(
         user_message=request.message,
         context_messages=sessions[session_key],
@@ -542,7 +597,7 @@ async def chat_stream(request: ChatRequest):
                 done.metadata["response"] = not_ready
                 yield done.to_sse()
                 return
-            agent = get_agent_loop(llm)
+            agent = get_agent_loop(llm, _resolve_memory_llm(llm))
             async for loop_ev in agent.run_stream(
                 user_message=request.message,
                 context_messages=sessions[session_key],
@@ -718,6 +773,8 @@ async def save_config(config: ModelConfigRequest):
             "base_url": config.base_url.strip(),
             "model": config.model.strip(),
         }
+        if config.memory_model and config.memory_model.strip():
+            payload["memory_model"] = config.memory_model.strip()
         if not is_usable_api_key(payload["api_key"]):
             raise HTTPException(status_code=400, detail="API Key 无效或为空，请填写真实密钥")
         saved = config_manager.save_config(payload)
@@ -848,6 +905,8 @@ def _apply_persisted_model_config() -> None:
         "base_url": config.get("base_url", ""),
         "model": config.get("model", "gpt-4"),
     }
+    if config.get("memory_model"):
+        global_model_config["memory_model"] = config["memory_model"]
     _agent_loop = None
 
 
@@ -864,6 +923,7 @@ async def get_config():
         "configured": True,
         "base_url": cfg.get("base_url", ""),
         "model": cfg.get("model", ""),
+        "memory_model": cfg.get("memory_model", "auto"),
         "has_api_key": True,
     }
 
@@ -905,8 +965,10 @@ async def quick_setup(request: dict):
         global_model_config = {
             "api_key": config["api_key"],
             "base_url": config["base_url"],
-            "model": config["model"]
+            "model": config["model"],
         }
+        if config.get("memory_model"):
+            global_model_config["memory_model"] = config["memory_model"]
         _agent_loop = None
     
     return result

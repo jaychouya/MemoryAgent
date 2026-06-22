@@ -20,6 +20,7 @@ from src.backend.api.chat import (
     _memory_user_id,
     _persist_session,
     _resolve_llm,
+    _resolve_memory_llm,
     _run_observer,
     get_agent_loop,
     sessions,
@@ -181,7 +182,7 @@ async def chat_completions(body: OpenAIChatRequest):
         return _completion_response(completion_id, model, not_ready)
 
     if system_prompt:
-        agent = get_agent_loop(llm)
+        agent = get_agent_loop(llm, _resolve_memory_llm(llm))
         result = await agent.run(
             user_message=request.message,
             system_prompt=system_prompt,
@@ -220,7 +221,7 @@ async def _stream_openai(
 
     yield _chunk_sse(completion_id, model, {"role": "assistant", "content": ""})
     loop_out: Dict[str, Any] = {}
-    agent = get_agent_loop(llm)
+    agent = get_agent_loop(llm, _resolve_memory_llm(llm))
     async for loop_ev in agent.run_stream(
         user_message=request.message,
         system_prompt=system_prompt,

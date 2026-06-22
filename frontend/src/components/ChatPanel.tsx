@@ -11,6 +11,8 @@ import {
   uploadFile,
   uploadRawUrl,
 } from "@/lib/api";
+import { CHAT_TIERS, resolveTierModel, type ChatTier } from "@/lib/modelTiers";
+import { PROVIDERS } from "@/components/SettingsPanel";
 import MarkdownMessage from "@/components/MarkdownMessage";
 import MemoryConflictModal, { PendingConflict } from "@/components/MemoryConflictModal";
 
@@ -137,6 +139,17 @@ export default function ChatPanel({
   const lastAssistantIdRef = useRef<string | null>(null);
   const [writeToast, setWriteToast] = useState<string | null>(null);
   const [memoryWritePending, setMemoryWritePending] = useState(false);
+  const [chatTier, setChatTier] = useState<ChatTier>(() => {
+    if (typeof window === "undefined") return "balanced";
+    return (localStorage.getItem("chatTier") as ChatTier) || "balanced";
+  });
+  const [customModel, setCustomModel] = useState<string>("");
+
+  const providerModels =
+    PROVIDERS.find((p) => p.id === modelConfig?.providerId)?.models || [];
+  const baseModel = modelConfig?.model || "";
+  const tierModel = resolveTierModel(baseModel, providerModels, chatTier);
+  const activeModelLabel = customModel || tierModel || baseModel || "未配置模型";
 
   const notifyMemoryWrites = (writes: MemoryWrite[]) => {
     if (!writes.length) return;
@@ -393,6 +406,13 @@ export default function ChatPanel({
       setIsLoading(false);
       return;
     }
+    const providerModels =
+      PROVIDERS.find((p) => p.id === modelConfig?.providerId)?.models || [];
+    const baseModel = activeConfig?.model || modelConfig?.model || "";
+    const tierModel = resolveTierModel(baseModel, providerModels, chatTier);
+    const modelOverride =
+      customModel || (chatTier !== "balanced" ? tierModel : undefined);
+
     const streamTimeout = window.setTimeout(() => abortController.abort(), 120_000);
     const requestBody = isRetry && lastRequestRef.current
       ? lastRequestRef.current
@@ -401,6 +421,8 @@ export default function ChatPanel({
           session_id: currentSessionId,
           user_id: userId,
           cross_session_memory: crossSessionMemory,
+          chat_tier: chatTier,
+          model_override: modelOverride,
           attachments: uploadedAttachments.map((a) => ({
             filename: a.filename,
             path: a.path,
@@ -411,7 +433,7 @@ export default function ChatPanel({
               ? {
                   api_key: activeConfig.apiKey,
                   base_url: activeConfig.baseUrl,
-                  model: activeConfig.model || "gpt-4o-mini",
+                  model: modelOverride || activeConfig.model || "gpt-4o-mini",
                 }
               : null,
         };
@@ -1163,6 +1185,47 @@ export default function ChatPanel({
               e.target.value = "";
             }}
           />
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            {CHAT_TIERS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setChatTier(t.id);
+                  localStorage.setItem("chatTier", t.id);
+                  if (t.id === "balanced") setCustomModel("");
+                }}
+                disabled={isLoading}
+                title={t.hint}
+                className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+                  chatTier === t.id
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+            {providerModels.length > 0 && (
+              <select
+                value={customModel}
+                onChange={(e) => setCustomModel(e.target.value)}
+                disabled={isLoading}
+                className="text-[11px] px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 max-w-[140px]"
+                title="指定模型"
+              >
+                <option value="">按档位自动</option>
+                {providerModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m.length > 22 ? `${m.slice(0, 20)}…` : m}
+                  </option>
+                ))}
+              </select>
+            )}
+            <span className="text-[10px] text-slate-400 ml-auto truncate max-w-[120px]">
+              {activeModelLabel}
+            </span>
+          </div>
           <div className="flex gap-2 items-end">
             <div className="flex flex-col gap-1 flex-shrink-0">
               <button

@@ -91,7 +91,12 @@ export default function Home() {
     }
     if (config.apiKey?.trim()) {
       try {
-        await saveModelConfig(config);
+        await saveModelConfig({
+          apiKey: config.apiKey,
+          baseUrl: config.baseUrl,
+          model: config.model,
+          memoryModel: config.memoryModel,
+        });
       } catch (e: unknown) {
         alert(e instanceof Error ? e.message : "配置保存失败");
         return false;

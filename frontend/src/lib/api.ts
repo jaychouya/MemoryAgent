@@ -105,6 +105,7 @@ export async function saveModelConfig(config: {
   apiKey: string;
   baseUrl: string;
   model: string;
+  memoryModel?: string;
 }): Promise<void> {
   const res = await fetch(apiUrl("/api/config"), {
     method: "POST",
@@ -113,6 +114,7 @@ export async function saveModelConfig(config: {
       api_key: config.apiKey.trim(),
       base_url: config.baseUrl.trim(),
       model: config.model.trim(),
+      memory_model: (config.memoryModel || "auto").trim(),
     }),
   });
   if (!res.ok) {

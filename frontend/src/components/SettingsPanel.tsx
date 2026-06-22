@@ -11,7 +11,7 @@ interface ModelProvider {
   models: string[];
 }
 
-const PROVIDERS: ModelProvider[] = [
+export const PROVIDERS: ModelProvider[] = [
   {
     id: "openai",
     name: "OpenAI",
@@ -145,6 +145,7 @@ export interface ModelConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  memoryModel?: string;
 }
 
 export default function SettingsPanel({
@@ -161,6 +162,7 @@ export default function SettingsPanel({
   const [apiKey, setApiKey] = useState(currentConfig?.apiKey || "");
   const [baseUrl, setBaseUrl] = useState(currentConfig?.baseUrl || "");
   const [model, setModel] = useState(currentConfig?.model || "");
+  const [memoryModel, setMemoryModel] = useState(currentConfig?.memoryModel || "auto");
 
   const provider = PROVIDERS.find(p => p.id === selectedProvider);
 
@@ -183,6 +185,7 @@ export default function SettingsPanel({
         apiKey,
         baseUrl: baseUrl || provider?.baseUrl || "",
         model: model || provider?.defaultModel || "",
+        memoryModel: memoryModel || "auto",
       });
       if (ok) onClose();
     } finally {
@@ -311,6 +314,27 @@ export default function SettingsPanel({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              记忆模型
+            </label>
+            <select
+              value={memoryModel}
+              onChange={(e) => setMemoryModel(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+            >
+              <option value="auto">自动（轻量，用于沉淀/召回）</option>
+              {provider?.models.map((m) => (
+                <option key={`mem-${m}`} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400 mt-1">
+              对话与记忆可分工：记忆提取默认用更轻的模型省成本
+            </p>
           </div>
 
           {/* Info */}
